@@ -1,10 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-// import "bootstrap/dist/css/bootstrap.min.css";
-// import "@/styles/home-hero.bootstrap.css";
 import { formatDateStable } from "@/lib/date";
-// import "@/styles/home-hero.css";
+import { buildWpPermalink } from "@/lib/permalink";
 
 type HeroItem = {
   id: number | string;
@@ -32,7 +31,6 @@ export default function HomeHero({
   const slides = useMemo(() => heroSlides || [], [heroSlides]);
   const [active, setActive] = useState(0);
 
-  // ensure autoplay only starts AFTER mount
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -62,80 +60,123 @@ export default function HomeHero({
 
   const current = slides[active];
 
- return (
-  <section className="home-hero">
-    <div className="container">
-      <div className="row g-4">
-        {/* HERO: col-7 on large screens, full width on mobile */}
-        <div className="col-12 col-lg-7">
-          <div className="hero-slider">
-            <div className="hero-image-wrap">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={current?.image || "/placeholder.jpg"}
-                alt={current?.title || "Featured"}
-              />
+  // ✅ WP permalink format: /YYYY/MM/DD/slug/
+  const heroHref = buildWpPermalink(current?.date, current?.slug);
 
-              <button type="button" className="hero-arrow left" onClick={prev}>
-                ‹
-              </button>
-              <button type="button" className="hero-arrow right" onClick={next}>
-                ›
-              </button>
-            </div>
+  return (
+    <section className="home-hero">
+      <div className="container">
+        <div className="row g-4">
+          {/* HERO: col-7 on large screens, full width on mobile */}
+          <div className="col-12 col-lg-7">
+            <div className="hero-slider">
+              <div className="hero-image-wrap">
+                <Link
+                  href={heroHref}
+                  aria-label={current?.title || "Read story"}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={current?.image || "/placeholder.jpg"}
+                    alt={current?.title || "Featured"}
+                    style={{
+                      cursor: heroHref !== "#" ? "pointer" : "default",
+                    }}
+                  />
+                </Link>
 
-            <div className="hero-content">
-              <div className="hero-date">
-                📅 {formatDateStable(current?.date)}
+                <button
+                  type="button"
+                  className="hero-arrow left"
+                  onClick={prev}
+                  aria-label="Previous slide"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  className="hero-arrow right"
+                  onClick={next}
+                  aria-label="Next slide"
+                >
+                  ›
+                </button>
               </div>
 
-              <h1 className="hero-title">{current?.title}</h1>
+              <div className="hero-content">
+                <div className="hero-date">
+                  📅 {formatDateStable(current?.date)}
+                </div>
 
-              <div className="hero-dots">
-                {slides.map((_, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    className={`hero-dot ${i === active ? "active" : ""}`}
-                    onClick={() => go(i)}
-                    aria-label={`Go to slide ${i + 1}`}
-                  />
-                ))}
+                <h1 className="hero-title">
+                  <Link
+                    href={heroHref}
+                    className="text-decoration-none text-dark"
+                    style={{
+                      pointerEvents: heroHref !== "#" ? "auto" : "none",
+                    }}
+                  >
+                    {current?.title}
+                  </Link>
+                </h1>
+
+                <div className="hero-dots">
+                  {slides.map((_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className={`hero-dot ${i === active ? "active" : ""}`}
+                      onClick={() => go(i)}
+                      aria-label={`Go to slide ${i + 1}`}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* MOVEMENTS: col-5 on large screens, full width on mobile */}
-        <div className="col-12 col-lg-5">
-          <aside className="movements-box h-100">
-            <div className="movements-header">
-              <h3>Movements News</h3>
-            </div>
+          {/* MOVEMENTS: col-5 on large screens, full width on mobile */}
+          <div className="col-12 col-lg-5">
+            <aside className="movements-box h-100">
+              <div className="movements-header">
+                <h3>Movements News</h3>
+              </div>
 
-            <div className="movements-list">
-              {movements?.map((m) => (
-                <div key={m.id} className="movements-item">
-                  <a href="#" className="movements-title">
-                    {m.title}
-                  </a>
+              <div className="movements-list">
+                {movements?.map((m) => {
+                  // ✅ WP permalink format: /YYYY/MM/DD/slug/
+                  const href = buildWpPermalink(m?.date, m?.slug);
 
-                  <div className="movements-meta">
-                    <span>👤 {m.author || "Cxomedia"}</span>
-                    <span>📅 {formatDateStable(m.date)}</span>
+                  return (
+                    <div key={m.id} className="movements-item">
+                      <Link
+                        href={href}
+                        className="movements-title text-decoration-none"
+                        style={{
+                          pointerEvents: href !== "#" ? "auto" : "none",
+                        }}
+                      >
+                        {m.title}
+                      </Link>
+
+                      <div className="movements-meta">
+                        <span>👤 {m.author || "Cxomedia"}</span>
+                        <span>📅 {formatDateStable(m.date)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {!movements?.length ? (
+                  <div className="p-3 text-muted">
+                    No movements posts found.
                   </div>
-                </div>
-              ))}
-
-              {!movements?.length ? (
-                <div className="p-3 text-muted">No movements posts found.</div>
-              ) : null}
-            </div>
-          </aside>
+                ) : null}
+              </div>
+            </aside>
+          </div>
         </div>
       </div>
-    </div>
-  </section>
-);
-
+    </section>
+  );
 }

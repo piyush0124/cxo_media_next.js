@@ -252,4 +252,17 @@ body {
   opacity: 0.35;
   cursor: not-allowed;
 }
+.story-content {
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+.story-content img {
+  max-width: 100%;
+  height: auto;
+}
+
+.story-content p {
+  margin-bottom: 1rem;
+}
 
