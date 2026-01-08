@@ -1,24 +1,58 @@
 import Link from "next/link";
+import { prisma } from "@/lib/prisma";
 
-export default function Dashboard() {
+export default async function Dashboard() {
+  const [totalPosts, publishedPosts, draftPosts, categories] = await Promise.all([
+    prisma.post.count(),
+    prisma.post.count({ where: { status: "PUBLISHED" } }),
+    prisma.post.count({ where: { status: "DRAFT" } }),
+    prisma.category.count(),
+  ]);
+
   return (
-    <main className="container py-4">
-      <div className="d-flex justify-content-between align-items-center mb-3">
-        <h1 className="m-0">Admin Dashboard</h1>
+    <div>
+      <h1 className="mb-3">Dashboard</h1>
 
-        <form action="/api/auth/logout" method="post">
-          <button className="btn btn-outline-dark">Logout</button>
-        </form>
+      <div className="row g-3">
+        <div className="col-md-3">
+          <div className="bg-white border rounded p-3">
+            <div className="text-muted">Total Posts</div>
+            <div className="fs-3 fw-bold">{totalPosts}</div>
+          </div>
+        </div>
+        <div className="col-md-3">
+          <div className="bg-white border rounded p-3">
+            <div className="text-muted">Published</div>
+            <div className="fs-3 fw-bold">{publishedPosts}</div>
+          </div>
+        </div>
+        <div className="col-md-3">
+          <div className="bg-white border rounded p-3">
+            <div className="text-muted">Drafts</div>
+            <div className="fs-3 fw-bold">{draftPosts}</div>
+          </div>
+        </div>
+        <div className="col-md-3">
+          <div className="bg-white border rounded p-3">
+            <div className="text-muted">Categories</div>
+            <div className="fs-3 fw-bold">{categories}</div>
+          </div>
+        </div>
       </div>
 
-      <div className="d-flex gap-3">
-        <Link className="btn btn-dark" href="/admin/posts/new">
-          Create Post
-        </Link>
-        <Link className="btn btn-outline-dark" href="/admin/posts">
-          Manage Posts
-        </Link>
+      <div className="bg-white border rounded p-3 mt-3">
+        <div className="d-flex flex-wrap gap-2">
+          <Link href="/admin/posts" className="btn btn-dark btn-sm">
+            Manage Posts
+          </Link>
+          <Link href="/admin/posts/new" className="btn btn-outline-dark btn-sm">
+            Add New Post
+          </Link>
+          <Link href="/admin/categories" className="btn btn-outline-dark btn-sm">
+            Manage Categories
+          </Link>
+        </div>
       </div>
-    </main>
+    </div>
   );
 }

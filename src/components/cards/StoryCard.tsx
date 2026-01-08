@@ -4,7 +4,7 @@ import { buildWpPermalink } from "@/lib/permalink";
 
 export default function StoryCard({ post }: { post: any }) {
   const image = post?.image || "/placeholder.jpg";
-  const href = buildWpPermalink(post?.date, post?.slug);
+const href = buildWpPermalink(post?.publishedAt || post?.date, post?.slug);
 
   return (
     <article className="border bg-white rounded overflow-hidden h-100">
@@ -25,7 +25,7 @@ export default function StoryCard({ post }: { post: any }) {
         </h3>
 
         <div className="text-muted" style={{ fontSize: 12 }}>
-          {formatDateStable(post?.date)}
+          {formatDateStable(post?.publishedAt || post?.date)}
         </div>
       </div>
     </article>

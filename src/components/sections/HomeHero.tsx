@@ -9,6 +9,7 @@ type HeroItem = {
   id: number | string;
   title: string;
   date?: string;
+  publishedAt?: string; // ✅ add this
   slug?: string;
   image?: string | null;
 };
@@ -17,6 +18,7 @@ type MovementItem = {
   id: number | string;
   title: string;
   date?: string;
+  publishedAt?: string; // ✅ add this
   slug?: string;
   author?: string | null;
 };
@@ -60,8 +62,11 @@ export default function HomeHero({
 
   const current = slides[active];
 
+  // ✅ Use publishedAt first (WordPress date)
+  const currentDate = current?.publishedAt || current?.date;
+
   // ✅ WP permalink format: /YYYY/MM/DD/slug/
-  const heroHref = buildWpPermalink(current?.date, current?.slug);
+  const heroHref = buildWpPermalink(currentDate, current?.slug);
 
   return (
     <section className="home-hero">
@@ -71,10 +76,7 @@ export default function HomeHero({
           <div className="col-12 col-lg-7">
             <div className="hero-slider">
               <div className="hero-image-wrap">
-                <Link
-                  href={heroHref}
-                  aria-label={current?.title || "Read story"}
-                >
+                <Link href={heroHref} aria-label={current?.title || "Read story"}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={current?.image || "/placeholder.jpg"}
@@ -105,7 +107,7 @@ export default function HomeHero({
 
               <div className="hero-content">
                 <div className="hero-date">
-                  📅 {formatDateStable(current?.date)}
+                  📅 {formatDateStable(currentDate)}
                 </div>
 
                 <h1 className="hero-title">
@@ -144,8 +146,8 @@ export default function HomeHero({
 
               <div className="movements-list">
                 {movements?.map((m) => {
-                  // ✅ WP permalink format: /YYYY/MM/DD/slug/
-                  const href = buildWpPermalink(m?.date, m?.slug);
+                  const mDate = m?.publishedAt || m?.date; // ✅ consistent
+                  const href = buildWpPermalink(mDate, m?.slug);
 
                   return (
                     <div key={m.id} className="movements-item">
@@ -161,16 +163,14 @@ export default function HomeHero({
 
                       <div className="movements-meta">
                         <span>👤 {m.author || "Cxomedia"}</span>
-                        <span>📅 {formatDateStable(m.date)}</span>
+                        <span>📅 {formatDateStable(mDate)}</span>
                       </div>
                     </div>
                   );
                 })}
 
                 {!movements?.length ? (
-                  <div className="p-3 text-muted">
-                    No movements posts found.
-                  </div>
+                  <div className="p-3 text-muted">No movements posts found.</div>
                 ) : null}
               </div>
             </aside>
