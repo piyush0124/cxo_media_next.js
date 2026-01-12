@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { formatDateStable } from "@/lib/date";
-import { buildWpPermalink } from "@/lib/permalink";
+import { buildwpnePermalink } from "@/lib/permalink";
 
 export default function StoryCard({ post }: { post: any }) {
   const image = post?.image || "/placeholder.jpg";
-const href = buildWpPermalink(post?.publishedAt || post?.date, post?.slug);
+const href = buildwpnePermalink(post?.publishedAt || post?.date, post?.slug);
 
   return (
     <article className="border bg-white rounded overflow-hidden h-100">

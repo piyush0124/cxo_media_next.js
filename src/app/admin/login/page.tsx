@@ -13,10 +13,11 @@ export default function Login() {
     setError("");
     setLoading(true);
 
-    const res = await fetch("/api/auth/login", {
+    const res = await fetch("/api/admin/login", {
       method: "POST",
+      credentials: "include", // ✅ REQUIRED for cookies
       headers: {
-        "Content-Type": "application/json", // ✅ REQUIRED
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({ username, password }),
     });

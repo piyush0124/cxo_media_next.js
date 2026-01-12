@@ -37,35 +37,58 @@ export default function AdminPostsPage() {
     [selected]
   );
 
-  async function load() {
-    const qs = new URLSearchParams();
-    qs.set("page", String(page));
-    qs.set("take", String(take));
-    qs.set("sort", sort);
+ async function load() {
+  const qs = new URLSearchParams();
+  qs.set("page", String(page));
+  qs.set("take", String(take));
+  qs.set("sort", sort);
 
-    if (s.trim()) qs.set("s", s.trim());
-    if (categoryId) qs.set("categoryId", categoryId);
-    if (month) qs.set("month", month);
+  if (s.trim()) qs.set("s", s.trim());
+  if (categoryId) qs.set("categoryId", categoryId);
+  if (month) qs.set("month", month);
 
-    if (tab === "MINE") qs.set("mine", "1");
-    else if (tab !== "ALL") qs.set("status", tab);
+  if (tab === "MINE") qs.set("mine", "1");
+  else if (tab !== "ALL") qs.set("status", tab);
 
-    const res = await fetch(`/api/admin/posts?${qs.toString()}`, { cache: "no-store" });
-    const json = await res.json();
-    setData(json);
+  const res = await fetch(`/api/admin/posts?${qs.toString()}`, {
+    cache: "no-store",
+    credentials: "include", // ✅ REQUIRED
+  });
+
+  // ✅ If not logged in, go to login
+  if (res.status === 401) {
+    window.location.href = "/admin/login";
+    return;
   }
+
+  const json = await res.json().catch(() => null);
+
+  // ✅ Stop if API failed
+  if (!res.ok || !json) {
+    console.error("Admin posts API failed:", res.status, json);
+    setData({ posts: [], total: 0, pages: 1, counts: { all: 0, mine: 0, published: 0, scheduled: 0, drafts: 0, private: 0, trash: 0 }, months: [] });
+    return;
+  }
+
+  setData(json);
+}
+
 
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, page, sort]);
 
-  useEffect(() => {
-    fetch("/api/admin/categories")
-      .then((r) => r.json())
-      .then((j) => setCats(j.categories || []))
-      .catch(() => setCats([]));
-  }, []);
+ useEffect(() => {
+  fetch("/api/admin/categories", { credentials: "include" })
+    .then((r) => {
+      if (r.status === 401) window.location.href = "/admin/login";
+      return r.json();
+    })
+    .then((j) => setCats(j.categories || []))
+    .catch(() => setCats([]));
+}, []);
+
 
   const toggleAll = (checked: boolean) => {
     const next: Record<number, boolean> = {};
@@ -78,6 +101,7 @@ export default function AdminPostsPage() {
 
     await fetch("/api/admin/posts/bulk", {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: bulk, ids: selectedIds }),
     });
@@ -91,7 +115,7 @@ export default function AdminPostsPage() {
 
   return (
     <div className="container-fluid py-3">
-      {/* Top header like WP + Screen Options/Help */}
+      {/* Top header like wpne + Screen Options/Help */}
       <div className="d-flex align-items-center gap-3 mb-2">
         <h1 className="m-0" style={{ fontSize: 26, fontWeight: 400 }}>
           Posts
@@ -154,7 +178,7 @@ export default function AdminPostsPage() {
         </div>
       </div>
 
-      {/* Search row (WP style) */}
+      {/* Search row (wpne style) */}
       <div className="d-flex justify-content-end gap-2 mb-2">
         <input className="form-control" style={{ width: 280 }} placeholder="Search Posts" value={s} onChange={(e) => setS(e.target.value)} />
         <button className="btn btn-primary" onClick={() => { setPage(1); load(); }}>
@@ -294,6 +318,7 @@ export default function AdminPostsPage() {
                         e.preventDefault();
                         await fetch("/api/admin/posts/bulk", {
                           method: "POST",
+                          credentials: "include",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ action: "TRASH", ids: [p.id] }),
                         });

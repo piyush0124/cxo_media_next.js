@@ -21,11 +21,22 @@ model User {
 }
 
 model Category {
-  id    Int    @id @default(autoincrement())
-  name  String
-  slug  String @unique
-  posts Post[]
+  id          Int        @id @default(autoincrement())
+  name        String
+  slug        String     @unique
+  description String?
+  parentId    Int?
+  parent      Category? @relation("CategoryParent", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryParent")
+  posts       Post[]
+  createdAt  DateTime @default(now())
 }
+
+model Setting {
+  key   String @id
+  value String
+}
+
 
 model Post {
   id          Int        @id @default(autoincrement())

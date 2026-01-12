@@ -1,12 +1,12 @@
 .admin-shell {
   display: flex;
   min-height: 100vh;
-  background: #f0f0f1; /* WP-like */
+  background: #f0f0f1; /* wpne-like */
 }
 
 .admin-sidebar {
   width: 260px;
-  background: #1d2327; /* WP sidebar */
+  background: #1d2327; /* wpne sidebar */
   color: #fff;
   position: sticky;
   top: 0;

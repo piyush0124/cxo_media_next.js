@@ -1,4 +1,4 @@
-export function buildWpPermalink(date?: string, slug?: string) {
+export function buildwpnePermalink(date?: string, slug?: string) {
   if (!date || !slug) return "#";
 
   const d = new Date(date);

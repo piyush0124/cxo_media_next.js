@@ -1,9 +1,9 @@
 import { jsonSafe } from "@/lib/json";
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import wpPrisma from "@/lib/prisma";
 
 export async function GET() {
-  const rows = await prisma.$queryRaw<any[]>`
+  const rows = await wpPrisma.$queryRaw<any[]>`
     SELECT t.name, t.slug
     FROM wpne_terms t
     JOIN wpne_term_taxonomy tt ON tt.term_id = t.term_id

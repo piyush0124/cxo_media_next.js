@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import wpPrisma from "@/lib/prisma";
 
 export default async function Dashboard() {
   const [totalPosts, publishedPosts, draftPosts, categories] = await Promise.all([
-    prisma.post.count(),
-    prisma.post.count({ where: { status: "PUBLISHED" } }),
-    prisma.post.count({ where: { status: "DRAFT" } }),
-    prisma.category.count(),
+    wpPrisma.post.count(),
+    wpPrisma.post.count({ where: { status: "PUBLISHED" } }),
+    wpPrisma.post.count({ where: { status: "DRAFT" } }),
+    wpPrisma.category.count(),
   ]);
 
   return (

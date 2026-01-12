@@ -1,133 +1,170 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/session";
+import { NextResponse, type NextRequest } from "next/server";
+import wpPrisma from "@/lib/wpPrisma";
+import { requireAdmin } from "@/lib/session";
 import { jsonSafe } from "@/lib/json";
 
-function bad(message: string, status = 400) {
-  return NextResponse.json({ ok: false, message }, { status });
+export const dynamic = "force-dynamic"; // ✅ avoid caching
+
+const UI = {
+  publish: "PUBLISHED",
+  future: "SCHEDULED",
+  draft: "DRAFT",
+  private: "PRIVATE",
+  trash: "TRASH",
+} as const;
+
+function uiStatus(wp: string) {
+  return (UI as any)[wp] ?? (wp ? String(wp).toUpperCase() : wp);
 }
 
-// Safe sort map (prevents SQL injection by only allowing known fields)
-const SORT_MAP: Record<string, any> = {
-  title: { title: "asc" },
-  title_desc: { title: "desc" },
-  author: { author: { username: "asc" } },
-  author_desc: { author: { username: "desc" } },
-  category: { category: { name: "asc" } },
-  category_desc: { category: { name: "desc" } },
-  date: { createdAt: "desc" },        // WP default: newest first
-  date_asc: { createdAt: "asc" },
-  views: { views: "desc" },
-  views_asc: { views: "asc" },
-};
+export async function GET(req: NextRequest) {
+  requireAdmin();
 
-export async function GET(req: Request) {
-  const session = getSession();
-  if (!session) return bad("Unauthorized", 401);
-
+  const p = process.env.wp_TABLE_PREFIX ?? "wp_";
   const url = new URL(req.url);
-  const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
-  const take = Math.min(100, Math.max(5, parseInt(url.searchParams.get("take") || "20", 10)));
+
+  const page = Math.max(1, Number(url.searchParams.get("page") || "1"));
+  const take = Math.min(100, Math.max(1, Number(url.searchParams.get("take") || "20")));
+  const skip = (page - 1) * take;
 
   const s = (url.searchParams.get("s") || "").trim();
-  const status = (url.searchParams.get("status") || "ALL").toUpperCase(); // ALL|DRAFT|PUBLISHED|SCHEDULED|PRIVATE|TRASH
-  const mine = url.searchParams.get("mine") === "1";
-  const categoryId = url.searchParams.get("categoryId");
-  const month = url.searchParams.get("month"); // YYYY-MM
-  const sort = (url.searchParams.get("sort") || "date").toLowerCase(); // title|author|category|date|views (+ _asc/_desc)
+  const categoryId = url.searchParams.get("categoryId") || "";
+  const month = url.searchParams.get("month") || "";
+  const status = url.searchParams.get("status") || "";
+  const sort = url.searchParams.get("sort") || "date";
 
-  const where: any = {
-    ...(mine ? { authorId: session.id } : {}),
-    ...(s
-      ? {
-          OR: [
-            { title: { contains: s } },
-            { slug: { contains: s } },
-            { excerpt: { contains: s } },
-            { content: { contains: s } },
-          ],
-        }
-      : {}),
-    ...(status !== "ALL" ? { status } : {}),
-    ...(categoryId ? { categoryId: Number(categoryId) } : {}),
+  const statusMap: any = {
+    PUBLISHED: "publish",
+    SCHEDULED: "future",
+    DRAFT: "draft",
+    PRIVATE: "private",
+    TRASH: "trash",
+  };
+  const wpStatus = status ? statusMap[status] : null;
+
+  const where: string[] = [`p.post_type='post'`];
+  const params: any[] = [];
+
+  if (wpStatus) {
+    where.push(`p.post_status=?`);
+    params.push(wpStatus);
+  } else {
+    where.push(`p.post_status IN ('publish','future','draft','private','trash')`);
+  }
+
+  if (s) {
+    where.push(`(p.post_title LIKE ? OR p.post_name LIKE ?)`);
+    params.push(`%${s}%`, `%${s}%`);
+  }
+
+  if (month) {
+    where.push(`DATE_FORMAT(p.post_date,'%Y-%m')=?`);
+    params.push(month);
+  }
+
+  let joinFilter = "";
+  if (categoryId) {
+    joinFilter = `
+      INNER JOIN ${p}term_relationships trf ON trf.object_id = p.ID
+      INNER JOIN ${p}term_taxonomy ttf ON ttf.term_taxonomy_id = trf.term_taxonomy_id AND ttf.taxonomy='category'
+    `;
+    where.push(`ttf.term_id=?`);
+    params.push(Number(categoryId));
+  }
+
+  const whereSql = `WHERE ${where.join(" AND ")}`;
+
+  let orderBy = `p.post_date DESC`;
+  if (sort === "date_asc") orderBy = `p.post_date ASC`;
+  if (sort === "title") orderBy = `p.post_title ASC`;
+  if (sort === "title_desc") orderBy = `p.post_title DESC`;
+  if (sort === "author") orderBy = `u.display_name ASC`;
+  if (sort === "author_desc") orderBy = `u.display_name DESC`;
+
+  const rows = await wpPrisma.$queryRawUnsafe<any[]>(
+    `
+    SELECT
+      p.ID as id,
+      p.post_title as title,
+      p.post_name as slug,
+      p.post_date as createdAt,
+      p.post_status as wpStatus,
+      u.display_name as authorName,
+      c.name as categoryName
+    FROM ${p}posts p
+    LEFT JOIN ${p}users u ON u.ID = p.post_author
+    LEFT JOIN ${p}term_relationships tr ON tr.object_id = p.ID
+    LEFT JOIN ${p}term_taxonomy tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy='category'
+    LEFT JOIN ${p}terms c ON c.term_id = tt.term_id
+    ${joinFilter}
+    ${whereSql}
+    GROUP BY p.ID
+    ORDER BY ${orderBy}
+    LIMIT ${take} OFFSET ${skip}
+    `,
+    ...params
+  );
+
+  const totalRows = await wpPrisma.$queryRawUnsafe<{ n: number }[]>(
+    `
+    SELECT COUNT(DISTINCT p.ID) as n
+    FROM ${p}posts p
+    ${joinFilter}
+    ${whereSql}
+    `,
+    ...params
+  );
+
+  const total = totalRows?.[0]?.n ?? 0;
+  const pages = Math.max(1, Math.ceil(total / take));
+
+  const c = await wpPrisma.$queryRawUnsafe<any[]>(`
+    SELECT
+      SUM(post_status IN ('publish','future','draft','private','trash')) as allCount,
+      SUM(post_status='publish') as publishedCount,
+      SUM(post_status='future') as scheduledCount,
+      SUM(post_status='draft') as draftsCount,
+      SUM(post_status='private') as privateCount,
+      SUM(post_status='trash') as trashCount
+    FROM ${p}posts
+    WHERE post_type='post'
+  `);
+
+  const counts = {
+    all: Number(c?.[0]?.allCount ?? 0),
+    mine: 0,
+    published: Number(c?.[0]?.publishedCount ?? 0),
+    scheduled: Number(c?.[0]?.scheduledCount ?? 0),
+    drafts: Number(c?.[0]?.draftsCount ?? 0),
+    private: Number(c?.[0]?.privateCount ?? 0),
+    trash: Number(c?.[0]?.trashCount ?? 0),
   };
 
-  // Month filter YYYY-MM
-  if (month && /^\d{4}-\d{2}$/.test(month)) {
-    const [y, m] = month.split("-").map(Number);
-    const start = new Date(y, m - 1, 1);
-    const end = new Date(y, m, 1);
-    where.createdAt = { gte: start, lt: end };
-  }
+  const monthsRaw = await wpPrisma.$queryRawUnsafe<{ ym: string }[]>(`
+    SELECT DISTINCT DATE_FORMAT(post_date, '%Y-%m') as ym
+    FROM ${p}posts
+    WHERE post_type='post' AND post_status IN ('publish','future','draft','private','trash')
+    ORDER BY ym DESC
+    LIMIT 36
+  `);
 
-  const orderBy = SORT_MAP[sort] || SORT_MAP["date"];
-
-  // Dynamic months list (like WP All dates dropdown)
-  // Gives you list like [{ value: "2026-01", label: "January 2026" }, ...]
-  const rawMonths = await prisma.post.findMany({
-    select: { createdAt: true },
-    orderBy: { createdAt: "desc" },
-    take: 2000, // enough to cover lots of months; we then unique it
+  const months = monthsRaw.map((r) => {
+    const [y, m] = r.ym.split("-");
+    const dt = new Date(Number(y), Number(m) - 1, 1);
+    return { value: r.ym, label: dt.toLocaleString("en-IN", { month: "long", year: "numeric" }) };
   });
 
-  const monthSet = new Set<string>();
-  for (const r of rawMonths) {
-    const d = new Date(r.createdAt);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    monthSet.add(key);
-  }
+  const posts = rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    slug: r.slug,
+    tags: "",
+    views: 0,
+    status: uiStatus(r.wpStatus),
+    createdAt: r.createdAt,
+    author: { username: r.authorName || "-" },
+    category: { name: r.categoryName || "-" },
+  }));
 
-  const monthValues = Array.from(monthSet).sort().reverse();
-  const months = monthValues.map((val) => {
-    const [yy, mm] = val.split("-").map(Number);
-    const label = new Date(yy, mm - 1, 1).toLocaleString(undefined, {
-      month: "long",
-      year: "numeric",
-    });
-    return { value: val, label };
-  });
-
-  const [total, posts, counts] = await Promise.all([
-    prisma.post.count({ where }),
-    prisma.post.findMany({
-      where,
-      orderBy,
-      skip: (page - 1) * take,
-      take,
-      include: {
-        category: true,
-        author: { select: { id: true, username: true, name: true } },
-      },
-    }),
-    Promise.all([
-      prisma.post.count(), // all
-      prisma.post.count({ where: { authorId: session.id } }), // mine
-      prisma.post.count({ where: { status: "PUBLISHED" } }),
-      prisma.post.count({ where: { status: "SCHEDULED" } }),
-      prisma.post.count({ where: { status: "DRAFT" } }),
-      prisma.post.count({ where: { status: "PRIVATE" } }),
-      prisma.post.count({ where: { status: "TRASH" } }),
-    ]).then(([all, mineCount, published, scheduled, drafts, priv, trash]) => ({
-      all,
-      mine: mineCount,
-      published,
-      scheduled,
-      drafts,
-      private: priv,
-      trash,
-    })),
-  ]);
-
-  return NextResponse.json(
-    jsonSafe({
-      ok: true,
-      page,
-      take,
-      total,
-      pages: Math.ceil(total / take),
-      posts,
-      counts,
-      months,
-    })
-  );
+  return NextResponse.json(jsonSafe({ posts, total, pages, counts, months }));
 }

@@ -6,5 +6,5 @@ export const HOME_SECTIONS: { title: string; slug: string }[] = [
   { title: "STARTUP WATCH", slug: "startup-watch" },
   { title: "NEWS ANALYSIS", slug: "news-analysis" },
   { title: "NEW IN MARKET", slug: "new-in-market" },
-  // Add more based on your WP categories
+  // Add more based on your wpne categories
 ];

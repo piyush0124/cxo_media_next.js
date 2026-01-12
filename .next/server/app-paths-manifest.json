@@ -1,10 +1,10 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
   "/page": "app/page.js",
-  "/[year]/[month]/[day]/[slug]/page": "app/[year]/[month]/[day]/[slug]/page.js",
+  "/api/home/route": "app/api/home/route.js",
   "/api/admin/categories/route": "app/api/admin/categories/route.js",
-  "/admin/dashboard/page": "app/admin/dashboard/page.js",
-  "/admin/login/page": "app/admin/login/page.js",
+  "/api/admin/media/route": "app/api/admin/media/route.js",
+  "/api/admin/posts/route": "app/api/admin/posts/route.js",
   "/admin/posts/page": "app/admin/posts/page.js",
   "/admin/posts/new/page": "app/admin/posts/new/page.js"
 }

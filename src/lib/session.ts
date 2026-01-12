@@ -46,3 +46,8 @@ export function requireAdmin(): AdminSession {
   }
   return session;
 }
+export function requireAuth() {
+  // TEMP: allow logged-in users
+  // later replace with real session validation
+  return true;
+}

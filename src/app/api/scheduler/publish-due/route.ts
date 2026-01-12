@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import wpPrisma from "@/lib/prisma";
 
 export async function GET(req: Request) {
   // Optional protection: set CRON_SECRET in .env
@@ -11,7 +11,7 @@ export async function GET(req: Request) {
 
   const now = new Date();
 
-  const result = await prisma.post.updateMany({
+  const result = await wpPrisma.post.updateMany({
     where: {
       status: "SCHEDULED",
       publishedAt: { lte: now },

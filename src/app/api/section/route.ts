@@ -1,6 +1,6 @@
 import { jsonSafe } from "@/lib/json";
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import wpPrisma from "@/lib/prisma";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -9,7 +9,7 @@ export async function GET(req: Request) {
 
   if (!slug) return NextResponse.json({ posts: [] });
 
-  const posts = await prisma.$queryRaw<any[]>`
+  const posts = await wpPrisma.$queryRaw<any[]>`
     SELECT
       p.ID as id,
       p.post_title as title,

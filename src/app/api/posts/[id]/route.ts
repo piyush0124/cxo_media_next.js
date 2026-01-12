@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import wpPrisma from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { jsonSafe } from "@/lib/json";
 
@@ -15,11 +15,11 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   if (!id) return bad("Invalid id");
 
   const [post, categories] = await Promise.all([
-    prisma.post.findUnique({
+    wpPrisma.post.findUnique({
       where: { id },
       include: { category: true },
     }),
-    prisma.category.findMany({ orderBy: { name: "asc" } }),
+    wpPrisma.category.findMany({ orderBy: { name: "asc" } }),
   ]);
 
   return NextResponse.json(jsonSafe({ ok: true, post, categories }));
