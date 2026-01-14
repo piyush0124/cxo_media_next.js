@@ -4,18 +4,20 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 type PostRow = any;
-
 type MonthsItem = { value: string; label: string };
 
 export default function AdminPostsPage() {
-  const [tab, setTab] = useState<"ALL" | "MINE" | "PUBLISHED" | "SCHEDULED" | "DRAFT" | "PRIVATE" | "TRASH">("ALL");
+  const [tab, setTab] = useState<
+    "ALL" | "MINE" | "PUBLISHED" | "SCHEDULED" | "DRAFT" | "PRIVATE" | "TRASH"
+  >("ALL");
+
   const [s, setS] = useState("");
   const [page, setPage] = useState(1);
   const take = 20;
 
   const [categoryId, setCategoryId] = useState<string>("");
-  const [month, setMonth] = useState<string>(""); // YYYY-MM
-  const [sort, setSort] = useState<string>("date"); // title/title_desc/author/... etc
+  const [month, setMonth] = useState<string>("");
+  const [sort, setSort] = useState<string>("date");
 
   const [showScreenOptions, setShowScreenOptions] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -24,71 +26,103 @@ export default function AdminPostsPage() {
     posts: PostRow[];
     total: number;
     pages: number;
-    counts: { all: number; mine: number; published: number; scheduled: number; drafts: number; private: number; trash: number };
+    counts: {
+      all: number;
+      mine: number;
+      published: number;
+      scheduled: number;
+      drafts: number;
+      private: number;
+      trash: number;
+    };
     months: MonthsItem[];
   } | null>(null);
 
   const [cats, setCats] = useState<any[]>([]);
   const [selected, setSelected] = useState<Record<number, boolean>>({});
   const [bulk, setBulk] = useState("");
+  const [error, setError] = useState<string>("");
 
   const selectedIds = useMemo(
-    () => Object.entries(selected).filter(([, v]) => v).map(([k]) => Number(k)),
+    () =>
+      Object.entries(selected)
+        .filter(([, v]) => v)
+        .map(([k]) => Number(k)),
     [selected]
   );
 
- async function load() {
-  const qs = new URLSearchParams();
-  qs.set("page", String(page));
-  qs.set("take", String(take));
-  qs.set("sort", sort);
+  const allChecked = useMemo(() => {
+    const rows = data?.posts || [];
+    if (!rows.length) return false;
+    return rows.every((p: any) => !!selected[p.id]);
+  }, [data?.posts, selected]);
 
-  if (s.trim()) qs.set("s", s.trim());
-  if (categoryId) qs.set("categoryId", categoryId);
-  if (month) qs.set("month", month);
+  async function load(nextPage?: number) {
+    setError("");
 
-  if (tab === "MINE") qs.set("mine", "1");
-  else if (tab !== "ALL") qs.set("status", tab);
+    const qs = new URLSearchParams();
+    qs.set("page", String(nextPage ?? page));
+    qs.set("take", String(take));
+    qs.set("sort", sort);
 
-  const res = await fetch(`/api/admin/posts?${qs.toString()}`, {
-    cache: "no-store",
-    credentials: "include", // ✅ REQUIRED
-  });
+    if (s.trim()) qs.set("s", s.trim());
+    if (categoryId) qs.set("categoryId", categoryId);
+    if (month) qs.set("month", month);
 
-  // ✅ If not logged in, go to login
-  if (res.status === 401) {
-    window.location.href = "/admin/login";
-    return;
+    if (tab === "MINE") qs.set("mine", "1");
+    else if (tab !== "ALL") qs.set("status", tab);
+
+    const res = await fetch(`/api/admin/posts?${qs.toString()}`, {
+      cache: "no-store",
+      credentials: "include",
+    });
+
+    if (res.status === 401) {
+      window.location.href = "/admin/login";
+      return;
+    }
+
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok || !json) {
+      console.error("Admin posts API failed:", res.status, json);
+      setError(json?.message || `Failed to load posts (${res.status})`);
+      setData({
+        posts: [],
+        total: 0,
+        pages: 1,
+        counts: {
+          all: 0,
+          mine: 0,
+          published: 0,
+          scheduled: 0,
+          drafts: 0,
+          private: 0,
+          trash: 0,
+        },
+        months: [],
+      });
+      return;
+    }
+
+    setData(json);
+    setSelected({});
   }
-
-  const json = await res.json().catch(() => null);
-
-  // ✅ Stop if API failed
-  if (!res.ok || !json) {
-    console.error("Admin posts API failed:", res.status, json);
-    setData({ posts: [], total: 0, pages: 1, counts: { all: 0, mine: 0, published: 0, scheduled: 0, drafts: 0, private: 0, trash: 0 }, months: [] });
-    return;
-  }
-
-  setData(json);
-}
-
 
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, page, sort]);
 
- useEffect(() => {
-  fetch("/api/admin/categories", { credentials: "include" })
-    .then((r) => {
-      if (r.status === 401) window.location.href = "/admin/login";
-      return r.json();
-    })
-    .then((j) => setCats(j.categories || []))
-    .catch(() => setCats([]));
-}, []);
-
+  useEffect(() => {
+    fetch("/api/admin/categories", { credentials: "include" })
+      .then((r) => {
+        if (r.status === 401) window.location.href = "/admin/login";
+        return r.json();
+      })
+      .then((j) => setCats(j.categories || []))
+      .catch(() => setCats([]));
+  }, []);
 
   const toggleAll = (checked: boolean) => {
     const next: Record<number, boolean> = {};
@@ -96,26 +130,149 @@ export default function AdminPostsPage() {
     setSelected(next);
   };
 
-  const runBulk = async () => {
-    if (!bulk || !selectedIds.length) return;
+  async function callBulk(action: string, ids: number[]) {
+    setError("");
 
-    await fetch("/api/admin/posts/bulk", {
+    const res = await fetch("/api/admin/posts/bulk", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: bulk, ids: selectedIds }),
+      body: JSON.stringify({ action, ids }),
     });
 
-    setSelected({});
+    if (res.status === 401) {
+      window.location.href = "/admin/login";
+      return false;
+    }
+
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok || !json?.ok) {
+      setError(json?.message || `Action failed (${res.status})`);
+      return false;
+    }
+
+    return true;
+  }
+
+  // ✅ Optimistic UI remove + fix pagination
+  function removeRowsFromUI(ids: number[], action: "TRASH" | "RESTORE" | "DELETE") {
+    setData((prev) => {
+      if (!prev) return prev;
+
+      const idSet = new Set(ids);
+      const removedRows = prev.posts.filter((p: any) => idSet.has(Number(p.id)));
+      const nextPosts = prev.posts.filter((p: any) => !idSet.has(Number(p.id)));
+
+      const removedCount = removedRows.length;
+
+      const nextTotal = Math.max(0, (prev.total || 0) - removedCount);
+      const nextPages = Math.max(1, Math.ceil(nextTotal / take));
+
+      const nextCounts = { ...prev.counts };
+
+      // Best-effort counts update (final truth comes from load())
+      if (action === "TRASH") {
+        if (tab !== "TRASH") {
+          nextCounts.trash = Math.max(0, nextCounts.trash + removedCount);
+        } else {
+          // if you're already in trash tab, trash action wouldn't happen normally
+        }
+      }
+
+      if (action === "RESTORE") {
+        if (tab === "TRASH") {
+          nextCounts.trash = Math.max(0, nextCounts.trash - removedCount);
+        }
+      }
+
+      if (action === "DELETE") {
+        if (tab === "TRASH") {
+          nextCounts.trash = Math.max(0, nextCounts.trash - removedCount);
+        }
+      }
+
+      // "all" count in your UI represents non-trash (like WP "All")
+      // We adjust only when leaving non-trash list
+      if (action === "TRASH" && tab !== "TRASH") {
+        nextCounts.all = Math.max(0, nextCounts.all - removedCount);
+      }
+
+      return {
+        ...prev,
+        posts: nextPosts,
+        total: nextTotal,
+        pages: nextPages,
+        counts: nextCounts,
+      };
+    });
+
+    // clear selection for those ids
+    setSelected((prev) => {
+      const next = { ...prev };
+      ids.forEach((id) => delete next[id]);
+      return next;
+    });
+  }
+
+  // ✅ Bulk apply with optimistic UI
+  const runBulk = async () => {
+    if (!bulk || !selectedIds.length) return;
+
+    const ids = [...selectedIds];
+    const action = bulk as any;
+
+    const ok = await callBulk(action, ids);
+    if (!ok) return;
+
+    if (action === "TRASH" || action === "RESTORE" || action === "DELETE") {
+      removeRowsFromUI(ids, action);
+    }
+
     setBulk("");
-    load();
+    setSelected({});
+
+    // if page became empty, go back one page
+    setTimeout(() => {
+      setData((prev) => {
+        if (!prev) return prev;
+        if ((prev.posts?.length || 0) === 0 && page > 1) {
+          setPage(page - 1);
+          load(page - 1);
+        } else {
+          load();
+        }
+        return prev;
+      });
+    }, 0);
   };
 
-  const counts = data?.counts || { all: 0, mine: 0, published: 0, scheduled: 0, drafts: 0, private: 0, trash: 0 };
+  const counts = data?.counts || {
+    all: 0,
+    mine: 0,
+    published: 0,
+    scheduled: 0,
+    drafts: 0,
+    private: 0,
+    trash: 0,
+  };
+
+  const bulkOptions =
+    tab === "TRASH"
+      ? [
+          { value: "", label: "Bulk actions" },
+          { value: "RESTORE", label: "Restore" },
+          { value: "DELETE", label: "Delete Permanently" },
+        ]
+      : [
+          { value: "", label: "Bulk actions" },
+          { value: "TRASH", label: "Move to Trash" },
+          { value: "PUBLISH", label: "Publish" },
+          { value: "DRAFT", label: "Move to Draft" },
+        ];
 
   return (
     <div className="container-fluid py-3">
-      {/* Top header like wpne + Screen Options/Help */}
       <div className="d-flex align-items-center gap-3 mb-2">
         <h1 className="m-0" style={{ fontSize: 26, fontWeight: 400 }}>
           Posts
@@ -129,13 +286,19 @@ export default function AdminPostsPage() {
           <div className="position-relative">
             <button
               className="btn btn-outline-secondary btn-sm"
-              onClick={() => { setShowScreenOptions((v) => !v); setShowHelp(false); }}
+              onClick={() => {
+                setShowScreenOptions((v) => !v);
+                setShowHelp(false);
+              }}
             >
               Screen Options ▾
             </button>
 
             {showScreenOptions ? (
-              <div className="position-absolute end-0 mt-2 bg-white border rounded p-3" style={{ width: 280, zIndex: 30 }}>
+              <div
+                className="position-absolute end-0 mt-2 bg-white border rounded p-3"
+                style={{ width: 280, zIndex: 30 }}
+              >
                 <div className="fw-semibold mb-2">Screen Options</div>
                 <div className="form-check">
                   <input className="form-check-input" type="checkbox" defaultChecked />
@@ -159,13 +322,19 @@ export default function AdminPostsPage() {
           <div className="position-relative">
             <button
               className="btn btn-outline-secondary btn-sm"
-              onClick={() => { setShowHelp((v) => !v); setShowScreenOptions(false); }}
+              onClick={() => {
+                setShowHelp((v) => !v);
+                setShowScreenOptions(false);
+              }}
             >
               Help ▾
             </button>
 
             {showHelp ? (
-              <div className="position-absolute end-0 mt-2 bg-white border rounded p-3" style={{ width: 320, zIndex: 30 }}>
+              <div
+                className="position-absolute end-0 mt-2 bg-white border rounded p-3"
+                style={{ width: 320, zIndex: 30 }}
+              >
                 <div className="fw-semibold mb-2">Help</div>
                 <ul className="m-0 ps-3 text-muted" style={{ fontSize: 13 }}>
                   <li>Use tabs to filter by post status.</li>
@@ -178,46 +347,72 @@ export default function AdminPostsPage() {
         </div>
       </div>
 
-      {/* Search row (wpne style) */}
+      {error ? <div className="alert alert-danger py-2 mb-2">{error}</div> : null}
+
       <div className="d-flex justify-content-end gap-2 mb-2">
-        <input className="form-control" style={{ width: 280 }} placeholder="Search Posts" value={s} onChange={(e) => setS(e.target.value)} />
-        <button className="btn btn-primary" onClick={() => { setPage(1); load(); }}>
+        <input
+          className="form-control"
+          style={{ width: 280 }}
+          placeholder="Search Posts"
+          value={s}
+          onChange={(e) => setS(e.target.value)}
+        />
+        <button
+          className="btn btn-primary"
+          onClick={() => {
+            setPage(1);
+            load(1);
+          }}
+        >
           Search Posts
         </button>
       </div>
 
       {/* Tabs */}
       <div className="mb-2" style={{ fontSize: 14 }}>
-        <TabLink active={tab === "ALL"} onClick={() => { setPage(1); setTab("ALL"); }}>All <span className="text-muted">({counts.all})</span></TabLink>
+        <TabLink active={tab === "ALL"} onClick={() => { setPage(1); setTab("ALL"); }}>
+          All <span className="text-muted">({counts.all})</span>
+        </TabLink>
         <span className="text-muted"> | </span>
 
-        <TabLink active={tab === "MINE"} onClick={() => { setPage(1); setTab("MINE"); }}>Mine <span className="text-muted">({counts.mine})</span></TabLink>
+        <TabLink active={tab === "MINE"} onClick={() => { setPage(1); setTab("MINE"); }}>
+          Mine <span className="text-muted">({counts.mine})</span>
+        </TabLink>
         <span className="text-muted"> | </span>
 
-        <TabLink active={tab === "PUBLISHED"} onClick={() => { setPage(1); setTab("PUBLISHED"); }}>Published <span className="text-muted">({counts.published})</span></TabLink>
+        <TabLink active={tab === "PUBLISHED"} onClick={() => { setPage(1); setTab("PUBLISHED"); }}>
+          Published <span className="text-muted">({counts.published})</span>
+        </TabLink>
         <span className="text-muted"> | </span>
 
-        <TabLink active={tab === "SCHEDULED"} onClick={() => { setPage(1); setTab("SCHEDULED"); }}>Scheduled <span className="text-muted">({counts.scheduled})</span></TabLink>
+        <TabLink active={tab === "SCHEDULED"} onClick={() => { setPage(1); setTab("SCHEDULED"); }}>
+          Scheduled <span className="text-muted">({counts.scheduled})</span>
+        </TabLink>
         <span className="text-muted"> | </span>
 
-        <TabLink active={tab === "DRAFT"} onClick={() => { setPage(1); setTab("DRAFT"); }}>Drafts <span className="text-muted">({counts.drafts})</span></TabLink>
+        <TabLink active={tab === "DRAFT"} onClick={() => { setPage(1); setTab("DRAFT"); }}>
+          Drafts <span className="text-muted">({counts.drafts})</span>
+        </TabLink>
         <span className="text-muted"> | </span>
 
-        <TabLink active={tab === "PRIVATE"} onClick={() => { setPage(1); setTab("PRIVATE"); }}>Private <span className="text-muted">({counts.private})</span></TabLink>
+        <TabLink active={tab === "PRIVATE"} onClick={() => { setPage(1); setTab("PRIVATE"); }}>
+          Private <span className="text-muted">({counts.private})</span>
+        </TabLink>
         <span className="text-muted"> | </span>
 
-        <TabLink active={tab === "TRASH"} onClick={() => { setPage(1); setTab("TRASH"); }}>Trash <span className="text-muted">({counts.trash})</span></TabLink>
+        <TabLink active={tab === "TRASH"} onClick={() => { setPage(1); setTab("TRASH"); }}>
+          Trash <span className="text-muted">({counts.trash})</span>
+        </TabLink>
       </div>
 
-      {/* Filters row */}
+      {/* Filters */}
       <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
         <select className="form-select" style={{ width: 200 }} value={bulk} onChange={(e) => setBulk(e.target.value)}>
-          <option value="">Bulk actions</option>
-          <option value="TRASH">Move to Trash</option>
-          <option value="RESTORE">Restore</option>
-          <option value="PUBLISH">Publish</option>
-          <option value="DRAFT">Move to Draft</option>
-          <option value="DELETE">Delete Permanently</option>
+          {bulkOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
         </select>
 
         <button className="btn btn-outline-primary" onClick={runBulk} disabled={!bulk || !selectedIds.length}>
@@ -242,14 +437,21 @@ export default function AdminPostsPage() {
           ))}
         </select>
 
-        <button className="btn btn-outline-primary" onClick={() => { setPage(1); load(); }}>
+        <button
+          className="btn btn-outline-primary"
+          onClick={() => {
+            setPage(1);
+            load(1);
+          }}
+        >
           Filter
         </button>
 
-        {/* right pagination summary */}
         <div className="ms-auto d-flex align-items-center gap-2 text-muted">
           <span>{data?.total ?? 0} items</span>
-          <button className="btn btn-sm btn-outline-secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>‹</button>
+          <button className="btn btn-sm btn-outline-secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            ‹
+          </button>
 
           <div className="d-flex align-items-center gap-1">
             <input
@@ -261,7 +463,9 @@ export default function AdminPostsPage() {
             <span className="text-muted">of {data?.pages ?? 1}</span>
           </div>
 
-          <button className="btn btn-sm btn-outline-secondary" disabled={data ? page >= data.pages : true} onClick={() => setPage((p) => p + 1)}>›</button>
+          <button className="btn btn-sm btn-outline-secondary" disabled={data ? page >= data.pages : true} onClick={() => setPage((p) => p + 1)}>
+            ›
+          </button>
         </div>
       </div>
 
@@ -271,21 +475,14 @@ export default function AdminPostsPage() {
           <thead className="table-light">
             <tr>
               <th style={{ width: 40 }}>
-                <input
-                  type="checkbox"
-                  onChange={(e) => toggleAll(e.target.checked)}
-                  checked={(data?.posts || []).length > 0 && (data?.posts || []).every((p: any) => selected[p.id])}
-                />
+                <input type="checkbox" onChange={(e) => toggleAll(e.target.checked)} checked={allChecked} />
               </th>
 
               <ThSort label="Title" activeSort={sort} asc="title" desc="title_desc" setSort={setSort} />
               <ThSort label="Authors" activeSort={sort} asc="author" desc="author_desc" setSort={setSort} />
               <ThSort label="Categories" activeSort={sort} asc="category" desc="category_desc" setSort={setSort} />
-
               <th style={{ width: 220 }}>Tags</th>
-
               <ThSort label="Views" activeSort={sort} asc="views_asc" desc="views" setSort={setSort} />
-
               <ThSort label="Date" activeSort={sort} asc="date_asc" desc="date" setSort={setSort} />
             </tr>
           </thead>
@@ -307,26 +504,92 @@ export default function AdminPostsPage() {
                   </Link>
 
                   <div className="text-muted mt-1" style={{ fontSize: 12 }}>
-                    <Link href={`/admin/posts/${p.id}/edit`} className="text-decoration-none">
-                      Edit
-                    </Link>
-                    {" | "}
-                    <a
-                      href="#"
-                      className="text-decoration-none"
-                      onClick={async (e) => {
-                        e.preventDefault();
-                        await fetch("/api/admin/posts/bulk", {
-                          method: "POST",
-                          credentials: "include",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ action: "TRASH", ids: [p.id] }),
-                        });
-                        load();
-                      }}
-                    >
-                      Trash
-                    </a>
+                    {tab !== "TRASH" ? (
+                      <>
+                        <Link href={`/admin/posts/${p.id}/edit`} className="text-decoration-none">
+                          Edit
+                        </Link>
+                        {" | "}
+                        <a
+                          href="#"
+                          className="text-decoration-none"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            const id = Number(p.id);
+
+                            const ok = await callBulk("TRASH", [id]);
+                            if (!ok) return;
+
+                            removeRowsFromUI([id], "TRASH");
+
+                            // if current page becomes empty, go back
+                            setTimeout(() => {
+                              setData((prev) => {
+                                if (!prev) return prev;
+                                if ((prev.posts?.length || 0) === 0 && page > 1) {
+                                  setPage(page - 1);
+                                  load(page - 1);
+                                } else {
+                                  load();
+                                }
+                                return prev;
+                              });
+                            }, 0);
+                          }}
+                        >
+                          Trash
+                        </a>
+                      </>
+                    ) : (
+                      <>
+                        <a
+                          href="#"
+                          className="text-decoration-none"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            const id = Number(p.id);
+
+                            const ok = await callBulk("RESTORE", [id]);
+                            if (!ok) return;
+
+                            removeRowsFromUI([id], "RESTORE");
+                            load();
+                          }}
+                        >
+                          Restore
+                        </a>
+                        {" | "}
+                        <a
+                          href="#"
+                          className="text-decoration-none text-danger"
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            if (!confirm("Delete permanently? This cannot be undone.")) return;
+
+                            const id = Number(p.id);
+                            const ok = await callBulk("DELETE", [id]);
+                            if (!ok) return;
+
+                            removeRowsFromUI([id], "DELETE");
+
+                            setTimeout(() => {
+                              setData((prev) => {
+                                if (!prev) return prev;
+                                if ((prev.posts?.length || 0) === 0 && page > 1) {
+                                  setPage(page - 1);
+                                  load(page - 1);
+                                } else {
+                                  load();
+                                }
+                                return prev;
+                              });
+                            }, 0);
+                          }}
+                        >
+                          Delete Permanently
+                        </a>
+                      </>
+                    )}
                   </div>
                 </td>
 
@@ -344,12 +607,10 @@ export default function AdminPostsPage() {
                     {p.status === "PUBLISHED"
                       ? "Published"
                       : p.status === "SCHEDULED"
-                      ? "Scheduled"
-                      : p.status}
+                        ? "Scheduled"
+                        : p.status}
                   </div>
-                  <div>
-                    {p.createdAt ? new Date(p.createdAt).toLocaleString() : ""}
-                  </div>
+                  <div>{p.createdAt ? new Date(p.createdAt).toLocaleString() : ""}</div>
                 </td>
               </tr>
             ))}
@@ -368,11 +629,22 @@ export default function AdminPostsPage() {
   );
 }
 
-function TabLink({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function TabLink({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <a
       href="#"
-      onClick={(e) => { e.preventDefault(); onClick(); }}
+      onClick={(e) => {
+        e.preventDefault();
+        onClick();
+      }}
       style={{
         color: "#2271b1",
         fontWeight: active ? 600 : 400,
@@ -404,7 +676,9 @@ function ThSort({
   return (
     <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => setSort(isAsc ? desc : asc)}>
       <span className="text-primary">{label}</span>{" "}
-      <span className="text-muted" style={{ fontSize: 12 }}>{arrow}</span>
+      <span className="text-muted" style={{ fontSize: 12 }}>
+        {arrow}
+      </span>
     </th>
   );
 }

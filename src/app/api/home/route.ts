@@ -54,7 +54,8 @@ export async function GET() {
         SELECT
           p.ID as id,
           p.post_title as title,
-          NULLIF(p.post_excerpt,'') as excerpt,
+          -- ✅ Prefer post_excerpt; otherwise fall back to post_content (trimmed)
+          COALESCE(NULLIF(p.post_excerpt,''), SUBSTRING(p.post_content, 1, 1200)) as excerpt,
           p.post_date as date,
           p.post_name as slug,
           img.guid as image

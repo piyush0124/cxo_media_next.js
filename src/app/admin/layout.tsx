@@ -28,6 +28,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
           <MenuTitle title="Settings" />
           <MenuLink href="/admin/settings" label="Settings" />
+          <MenuLink href="/admin/menus" label="Menus" />
         </nav>
       </aside>
 

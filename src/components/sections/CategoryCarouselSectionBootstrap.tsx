@@ -1,18 +1,42 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import StoryCard from "@/components/cards/StoryCard";
+
+function StoryCardSkeleton() {
+  return (
+    <div className="story-skel">
+      <div className="story-skel__img shimmer" />
+      <div className="story-skel__body">
+        <div className="story-skel__line shimmer" style={{ width: "92%" }} />
+        <div className="story-skel__line shimmer" style={{ width: "78%" }} />
+        <div className="story-skel__meta shimmer" style={{ width: "45%" }} />
+        <div className="story-skel__para shimmer" style={{ width: "96%" }} />
+        <div className="story-skel__para shimmer" style={{ width: "88%" }} />
+        <div className="story-skel__para shimmer" style={{ width: "70%" }} />
+      </div>
+    </div>
+  );
+}
 
 export default function CategoryCarouselSectionBootstrap({
   title,
+  slug,
   posts,
+  loading,
 }: {
   title: string;
+  slug: string; // ✅ NEW
   posts: any[];
+  loading?: boolean;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(true);
+
+  const items = posts || [];
+  const showSkeleton = !!loading && (!items || items.length === 0);
 
   const update = () => {
     const el = ref.current;
@@ -34,29 +58,27 @@ export default function CategoryCarouselSectionBootstrap({
       el.removeEventListener("scroll", onScroll);
       ro.disconnect();
     };
-  }, []);
+  }, [items?.length]);
 
   const scroll = (dir: "l" | "r") => {
     const el = ref.current;
     if (!el) return;
-    const step = Math.max(280, Math.floor(el.clientWidth * 0.8));
-    el.scrollBy({ left: dir === "l" ? -step : step, behavior: "smooth" });
+    const dx = Math.round(el.clientWidth * 0.9);
+    el.scrollBy({ left: dir === "l" ? -dx : dx, behavior: "smooth" });
   };
-
-  if (!posts?.length) return null;
 
   return (
     <section className="container mt-4">
-      {/* Heading row (Bootstrap) */}
-      <div className="d-flex align-items-end justify-content-between border-bottom pb-2 mb-3">
-        <h2 className="m-0 section-title">{title}</h2>
-        <a href="#" className="small text-secondary text-decoration-none">
+      <div className="section-head">
+        <h2 className="section-title">{title}</h2>
+
+        {/* ✅ View all goes to category page */}
+        <Link href={`/category/${slug}`} className="section-link">
           View all →
-        </a>
+        </Link>
       </div>
 
-      {/* Carousel row */}
-      <div className="position-relative">
+      <div className="carousel-wrap">
         <button
           type="button"
           onClick={() => scroll("l")}
@@ -67,11 +89,11 @@ export default function CategoryCarouselSectionBootstrap({
           ‹
         </button>
 
-        <div ref={ref} className="scroll-row no-scrollbar px-5">
+        <div ref={ref} className="scroll-row no-scrollbar">
           <div className="d-flex gap-3 py-1">
-            {posts.map((p: any) => (
-              <div key={p.id} className="carousel-item-width">
-                <StoryCard post={p} />
+            {(showSkeleton ? Array.from({ length: 6 }) : items).map((p: any, idx: number) => (
+              <div key={p?.id ?? idx} className="carousel-item-width">
+                {showSkeleton ? <StoryCardSkeleton /> : <StoryCard post={p} />}
               </div>
             ))}
           </div>

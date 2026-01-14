@@ -1,9 +1,30 @@
-export function formatDateStable(input?: string) {
-  if (!input) return "";
-  const d = new Date(input);
-  if (Number.isNaN(d.getTime())) return "";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+function getOrdinalSuffix(day: number) {
+  if (day > 3 && day < 21) return "th"; // 11th–13th
+  switch (day % 10) {
+    case 1:
+      return "st";
+    case 2:
+      return "nd";
+    case 3:
+      return "rd";
+    default:
+      return "th";
+  }
+}
+
+export function formatDateStable(dateInput?: string | Date) {
+  if (!dateInput) return "";
+
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return "";
+
+  const day = d.getDate();
+  const suffix = getOrdinalSuffix(day);
+
+  const monthYear = d.toLocaleDateString("en-GB", {
+    month: "long",
+    year: "numeric",
+  });
+
+  return `${day}${suffix} ${monthYear}`;
 }
