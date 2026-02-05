@@ -1,82 +1,167 @@
 import { NextResponse } from "next/server";
-import wpPrisma from "@/lib/wpPrisma";
-import { requireAdmin } from "@/lib/session";
+import prisma from "@/lib/prisma";
+import wpdb from "@/lib/wpdb";
+import { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-function uploadBaseUrl() {
-  const site = (process.env.WP_SITE_URL || "").replace(/\/$/, "");
-  return `${site}/wp-content/uploads`;
+type UnifiedMedia = {
+  id: string; // "prisma:12" or "wp:345"
+  source: "prisma" | "wp";
+  title: string;
+  url: string;
+  mime: string;
+  createdAt: string;
+};
+
+function toISO(d: any) {
+  try {
+    return new Date(d).toISOString();
+  } catch {
+    return new Date().toISOString();
+  }
+}
+
+function getWpTables() {
+  const prefix = process.env.WP_TABLE_PREFIX || "wp_";
+  if (!/^[A-Za-z0-9_]+$/.test(prefix)) throw new Error("Invalid WP_TABLE_PREFIX");
+  return {
+    posts: `${prefix}posts`,
+    postmeta: `${prefix}postmeta`,
+  };
+}
+
+function buildWpUrl(attachedFile: string | null, guid: string | null) {
+  const site = (process.env.WP_SITE_URL || "").replace(/\/+$/, "");
+
+  // Best source: _wp_attached_file (ex: "2026/02/image.jpg" or "sites/2/2026/02/image.jpg")
+  if (attachedFile && site) {
+    return `${site}/wp-content/uploads/${attachedFile.replace(/^\/+/, "")}`;
+  }
+
+  // guid can be absolute
+  if (guid && /^https?:\/\//i.test(guid)) return guid;
+
+  // guid can be relative ("/wp-content/uploads/..", "?attachment_id=..", etc.)
+  if (guid && site) {
+    try {
+      return new URL(guid, site).toString();
+    } catch {
+      // ignore
+    }
+  }
+
+  return "";
 }
 
 export async function GET(req: Request) {
-  requireAdmin();
+  try {
+    const url = new URL(req.url);
 
-  const p = process.env.WP_TABLE_PREFIX ?? "wp_";
-  const url = new URL(req.url);
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const take = Math.min(60, Math.max(1, parseInt(url.searchParams.get("take") || "30", 10)));
+    const skip = (page - 1) * take;
 
-  const page = Math.max(1, Number(url.searchParams.get("page") || "1"));
-  const take = Math.min(60, Math.max(1, Number(url.searchParams.get("take") || "30")));
-  const skip = (page - 1) * take;
-  const s = (url.searchParams.get("s") || "").trim();
+    const s = (url.searchParams.get("s") || "").trim();
+    const source = (url.searchParams.get("source") || "all") as "all" | "prisma" | "wp";
 
-  const where: string[] = [`a.post_type='attachment'`, `a.post_status='inherit'`];
-  const params: any[] = [];
-  if (s) {
-    where.push(`(a.post_title LIKE ? OR a.guid LIKE ? OR af.meta_value LIKE ?)`);
-    params.push(`%${s}%`, `%${s}%`, `%${s}%`);
+    // -------- cxo_prisma (Prisma Media) --------
+    const prismaWhere =
+      s && source !== "wp"
+        ? {
+            OR: [
+              { title: { contains: s } },
+              { url: { contains: s } },
+              { altText: { contains: s } },
+              { caption: { contains: s } },
+            ],
+          }
+        : undefined;
+
+    const prismaPromise =
+      source === "wp"
+        ? Promise.resolve([] as any[])
+        : prisma.media.findMany({
+            where: prismaWhere,
+            orderBy: { id: "desc" },
+            take: 500,
+            select: { id: true, title: true, url: true, mimeType: true, createdAt: true },
+          });
+
+    // -------- cxo_portal (WordPress attachments) --------
+    const { posts, postmeta } = getWpTables();
+
+    // IMPORTANT: Prisma cannot parameterize table names safely, so we validate prefix and then use $queryRawUnsafe.
+    // Values (LIKE) are still safely passed as parameters using Prisma.sql in the unsafe string? Not possible.
+    // We'll safely interpolate only table names, and keep LIKE value sanitized.
+    const like = s ? `%${s.replace(/[%_]/g, "\\$&")}%` : null;
+
+    const wpSql = `
+      SELECT 
+        p.ID as id,
+        p.post_title as title,
+        p.guid as guid,
+        p.post_mime_type as mime,
+        p.post_date_gmt as createdAt,
+        pm.meta_value as attachedFile
+      FROM \`${posts}\` p
+      LEFT JOIN \`${postmeta}\` pm
+        ON pm.post_id = p.ID AND pm.meta_key = '_wp_attached_file'
+      WHERE p.post_type = 'attachment'
+        AND p.post_status = 'inherit'
+        ${s ? `AND (p.post_title LIKE ? OR p.guid LIKE ? OR p.post_mime_type LIKE ?)` : ""}
+      ORDER BY p.ID DESC
+      LIMIT 500
+    `;
+
+    const wpPromise =
+      source === "prisma"
+        ? Promise.resolve([] as any[])
+        : (async () => {
+            const rows: any[] = s
+              ? await wpdb.$queryRawUnsafe(wpSql, like, like, like)
+              : await wpdb.$queryRawUnsafe(wpSql);
+            return rows || [];
+          })();
+
+    const [prismaRows, wpRows] = await Promise.all([prismaPromise, wpPromise]);
+
+    const prismaMedia: UnifiedMedia[] =
+      source === "wp"
+        ? []
+        : prismaRows.map((m: any) => ({
+            id: `prisma:${m.id}`,
+            source: "prisma",
+            title: m.title || "Untitled",
+            url: m.url,
+            mime: m.mimeType || "",
+            createdAt: toISO(m.createdAt),
+          }));
+
+    const wpMedia: UnifiedMedia[] =
+      source === "prisma"
+        ? []
+        : wpRows.map((r: any) => ({
+            id: `wp:${r.id}`,
+            source: "wp",
+            title: r.title || "Untitled",
+            url: buildWpUrl(r.attachedFile, r.guid),
+            mime: r.mime || "",
+            createdAt: toISO(r.createdAt || new Date()),
+          }));
+
+    const all = [...prismaMedia, ...wpMedia].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    const total = all.length;
+    const pages = Math.max(1, Math.ceil(total / take));
+    const media = all.slice(skip, skip + take);
+
+    return NextResponse.json({ media, total, pages });
+  } catch (e) {
+    console.error(e);
+    return NextResponse.json({ error: "Failed to load media" }, { status: 500 });
   }
-  const whereSql = `WHERE ${where.join(" AND ")}`;
-
-  // IMPORTANT: do NOT rely on guid for URL. Use _wp_attached_file.
-  const rows = await wpPrisma.$queryRawUnsafe<any[]>(
-    `
-    SELECT
-      a.ID as id,
-      a.post_title as title,
-      a.post_mime_type as mime,
-      a.post_date as date,
-      af.meta_value as filePath,
-      alt.meta_value as alt,
-      a.post_excerpt as caption
-    FROM ${p}posts a
-    LEFT JOIN ${p}postmeta af
-      ON af.post_id = a.ID AND af.meta_key = '_wp_attached_file'
-    LEFT JOIN ${p}postmeta alt
-      ON alt.post_id = a.ID AND alt.meta_key = '_wp_attachment_image_alt'
-    ${whereSql}
-    ORDER BY a.ID DESC
-    LIMIT ${take} OFFSET ${skip}
-    `,
-    ...params
-  );
-
-  const totalRows = await wpPrisma.$queryRawUnsafe<any[]>(
-    `
-    SELECT COUNT(*) as n
-    FROM ${p}posts a
-    LEFT JOIN ${p}postmeta af
-      ON af.post_id = a.ID AND af.meta_key = '_wp_attached_file'
-    ${whereSql}
-    `,
-    ...params
-  );
-
-  const base = uploadBaseUrl();
-  const media = rows.map((r) => ({
-    id: Number(r.id),
-    title: r.title || "",
-    mime: r.mime || "",
-    date: r.date,
-    alt: r.alt || "",
-    caption: r.caption || "",
-    // Build URL from uploads path
-    url: r.filePath ? `${base}/${String(r.filePath).replace(/^\/+/, "")}` : (r.guid || ""),
-    filePath: r.filePath || "",
-  }));
-
-  const total = Number(totalRows?.[0]?.n || 0);
-  const pages = Math.max(1, Math.ceil(total / take));
-
-  return NextResponse.json({ media, total, pages });
 }

@@ -43,7 +43,6 @@ export default async function HomePage() {
             Visit Company Profile
           </a>
         </div>
-             {/* ✅ MAIN CATEGORY MENU */}
         <header className="mt-3 mb-2">
           <MainMenu />
         </header>

@@ -1,27 +1,46 @@
 import { NextResponse } from "next/server";
-import { signSession } from "@/lib/session";
+import bcrypt from "bcryptjs";
+import { PrismaClient, Role } from "@prisma/client";
+import { setSessionCookie, signSession } from "@/lib/auth";
+
+const prisma = new PrismaClient();
+
+async function ensureBootstrapAdmin() {
+  const count = await prisma.user.count();
+  if (count > 0) return;
+
+  const passwordHash = await bcrypt.hash("admin123", 10);
+  await prisma.user.create({
+    data: {
+      username: "admin",
+      name: "Administrator",
+      email: "admin@example.com",
+      role: Role.ADMIN,
+      passwordHash,
+    },
+  });
+}
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => null);
-  if (!body) return NextResponse.json({ ok: false, message: "Invalid JSON" }, { status: 400 });
+  await ensureBootstrapAdmin();
 
-  const { username, password } = body;
+  const body = await req.json();
+  const username = (body.username || "").trim();
+  const password = body.password || "";
 
-  // TODO: replace with real auth
-  if (username !== "admin" || password !== "admin123") {
-    return NextResponse.json({ ok: false, message: "Invalid credentials" }, { status: 401 });
-  }
+  const user = await prisma.user.findUnique({ where: { username } });
+  if (!user) return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
 
-  const token = signSession({ id: 1, username: "admin", role: "ADMIN" });
+  const ok = await bcrypt.compare(password, user.passwordHash);
+  if (!ok) return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
 
-  const res = NextResponse.json({ ok: true });
-  res.cookies.set("admin_token", token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: false,
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
+  const token = await signSession({
+    id: user.id,
+    username: user.username,
+    name: user.name,
+    role: user.role,
   });
 
-  return res;
+  setSessionCookie(token);
+  return NextResponse.json({ ok: true });
 }

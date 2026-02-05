@@ -1,7 +1,24 @@
-import mysql from "mysql2/promise";
+import { PrismaClient } from "@prisma/client";
 
-export const wpPool = mysql.createPool({
-  uri: process.env.WP_DATABASE_URL,
-  connectionLimit: 5,
-});
-    
+declare global {
+  // eslint-disable-next-line no-var
+  var __wpPrisma: PrismaClient | undefined;
+}
+
+/**
+ * WordPress DB Prisma Client (cxo_portal)
+ * Uses WP_DATABASE_URL
+ */
+const wpdb =
+  global.__wpPrisma ||
+  new PrismaClient({
+    datasources: {
+      db: {
+        url: process.env.WP_DATABASE_URL,
+      },
+    },
+  });
+
+if (process.env.NODE_ENV !== "production") global.__wpPrisma = wpdb;
+
+export default wpdb;
