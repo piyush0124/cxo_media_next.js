@@ -93,6 +93,13 @@ model Post {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
+    metaTitle       String?
+  metaDescription String?
+  ogImage         String?
+  canonicalUrl    String?
+  noIndex         Boolean   @default(false)
+
+
   @@index([authorId])
   @@index([categoryId])
   @@index([status])
@@ -106,5 +113,13 @@ model Media {
   mimeType  String
   altText   String?  @db.LongText
   caption   String?  @db.LongText
+  createdAt DateTime @default(now())
+}
+
+model WidgetArea {
+  id        Int      @id @default(autoincrement())
+  areaKey   String   @unique
+  config    String   @db.LongText  // JSON
+  updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 }

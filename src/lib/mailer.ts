@@ -1,14 +1,15 @@
 import nodemailer from "nodemailer";
+import { getSetting } from "@/lib/settings";
 
-function getTransport() {
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || "587");
-  const secure = String(process.env.SMTP_SECURE || "false") === "true";
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
+export async function getTransportFromSettings() {
+  const host = await getSetting("smtp.host");
+  const port = Number(await getSetting("smtp.port", "587"));
+  const secure = (await getSetting("smtp.secure", "0")) === "1";
+  const user = await getSetting("smtp.user");
+  const pass = await getSetting("smtp.pass");
 
   if (!host || !user || !pass) {
-    throw new Error("SMTP not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS in .env");
+    throw new Error("SMTP is not configured in Settings → SMTP");
   }
 
   return nodemailer.createTransport({
@@ -25,15 +26,15 @@ export async function sendSetPasswordEmail(args: {
   setPasswordUrl: string;
   username: string;
 }) {
-  const transporter = getTransport();
-  const from = process.env.MAIL_FROM || process.env.SMTP_USER || "no-reply@example.com";
+  const transporter = await getTransportFromSettings();
+  const from = await getSetting("smtp.from", "CXO Media <no-reply@example.com>");
   const siteName = args.siteName || "CXO Media";
 
   await transporter.sendMail({
     from,
     to: args.to,
     subject: `Set your password for ${siteName}`,
-    text: `Hello,\n\nUsername: ${args.username}\n\nSet password:\n${args.setPasswordUrl}\n`,
+    text: `Username: ${args.username}\n\nSet password:\n${args.setPasswordUrl}\n`,
     html: `<p><b>Username:</b> ${args.username}</p><p><a href="${args.setPasswordUrl}">Set Password</a></p>`,
   });
 }

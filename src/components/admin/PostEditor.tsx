@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import SeoPreview from "@/components/admin/SeoPreview";
+import BlockEditorDnd from "@/components/editor/BlockEditorDnd";
+import type { Block } from "@/components/editor/blocks";
+import { blocksToHtml, uid } from "@/components/editor/blocks";
 
 type Category = { id: number; name: string };
 
@@ -16,7 +20,7 @@ type MediaItem = {
 
 type Props = {
   mode: "create" | "edit";
-  initial?: any; // id/wpId, title, slug, excerpt, content, tags, categoryId, status, publishedAt, featuredMediaId, featuredUrl, featuredTitle, featuredAlt, featuredCaption
+  initial?: any;
   categories?: Category[];
 };
 
@@ -39,17 +43,13 @@ function fromInputLocal(v: string) {
 
 export default function PostEditor({ mode, initial, categories = [] }: Props) {
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<string>("");
+  const [msg, setMsg] = useState("");
 
-  // ✅ WP post id
-  const [wpId, setWpId] = useState<number | null>(
-    initial?.id ?? initial?.wpId ?? null
-  );
-
+  // core
+  const [wpId, setWpId] = useState<number | null>(initial?.id ?? null);
   const [title, setTitle] = useState(initial?.title ?? "");
   const [slug, setSlug] = useState(initial?.slug ?? "");
   const [excerpt, setExcerpt] = useState(initial?.excerpt ?? "");
-  const [content, setContent] = useState(initial?.content ?? "");
   const [tags, setTags] = useState(initial?.tags ?? "");
   const [categoryId, setCategoryId] = useState<string>(
     initial?.categoryId ? String(initial.categoryId) : ""
@@ -59,15 +59,13 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
     toInputLocal(initial?.publishedAt)
   );
 
-  // ✅ Featured image (attachment)
+  // ✅ Featured Image
   const [featuredMediaId, setFeaturedMediaId] = useState<number | null>(
     initial?.featuredMediaId ?? null
   );
   const [featuredUrl, setFeaturedUrl] = useState<string>(
     initial?.featuredUrl ?? ""
   );
-
-  // ✅ Featured meta
   const [featuredTitle, setFeaturedTitle] = useState<string>(
     initial?.featuredTitle ?? ""
   );
@@ -76,6 +74,28 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
   );
   const [featuredCaption, setFeaturedCaption] = useState<string>(
     initial?.featuredCaption ?? ""
+  );
+
+  // ✅ SEO
+  const [metaTitle, setMetaTitle] = useState(initial?.metaTitle ?? "");
+  const [metaDescription, setMetaDescription] = useState(
+    initial?.metaDescription ?? ""
+  );
+  const [ogImage, setOgImage] = useState(initial?.ogImage ?? "");
+  const [canonicalUrl, setCanonicalUrl] = useState(initial?.canonicalUrl ?? "");
+  const [noIndex, setNoIndex] = useState(Boolean(initial?.noIndex));
+
+  // ✅ Gutenberg blocks (convert to HTML on save)
+  const [blocks, setBlocks] = useState<Block[]>(
+    Array.isArray(initial?.blocks)
+      ? initial.blocks
+      : [
+          {
+            id: uid(),
+            type: "paragraph",
+            content: initial?.content ? String(initial.content) : "",
+          },
+        ]
   );
 
   // Media modal
@@ -88,11 +108,14 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
     pages: number;
   } | null>(null);
   const [mediaLoading, setMediaLoading] = useState(false);
-
-  // upload state
   const [uploading, setUploading] = useState(false);
 
-  // auto slug from title (create)
+  // ✅ selected item inside modal (WP-like)
+  const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null);
+
+  const isScheduled = status === "SCHEDULED";
+
+  // auto slug (create)
   useEffect(() => {
     if (mode !== "create") return;
     if (slug.trim()) return;
@@ -105,8 +128,6 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
     setSlug(s);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [title]);
-
-  const isScheduled = status === "SCHEDULED";
 
   async function loadMedia() {
     setMediaLoading(true);
@@ -121,9 +142,16 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
         credentials: "include",
       });
       const json = await res.json();
+
       setMediaData(json);
+
+      // keep selection if still in list, otherwise clear
+      const found =
+        selectedMedia && json?.media?.find((x: MediaItem) => x.id === selectedMedia.id);
+      if (!found) setSelectedMedia(null);
     } catch {
       setMediaData({ media: [], total: 0, pages: 1 });
+      setSelectedMedia(null);
     } finally {
       setMediaLoading(false);
     }
@@ -154,19 +182,13 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
         return;
       }
 
-      // select uploaded image as featured
-      const m = json.media;
-      setFeaturedMediaId(Number(m.id));
-      setFeaturedUrl(String(m.url));
-
-      // prefill meta from upload
-      setFeaturedTitle(String(m.title || ""));
-      setFeaturedAlt("");
-      setFeaturedCaption("");
-
-      // refresh list
+      // After upload, refresh library and select newly uploaded item
       setMediaPage(1);
       await loadMedia();
+
+      if (json?.media) {
+        setSelectedMedia(json.media);
+      }
     } finally {
       setUploading(false);
     }
@@ -181,17 +203,25 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
       title: title.trim(),
       slug: slug.trim(),
       excerpt: excerpt?.trim() || "",
-      content,
+
+      content: blocksToHtml(blocks),
+      blocks, // optional meta
+
       tags: tags?.trim() || "",
       categoryId: categoryId ? Number(categoryId) : null,
       status,
       publishedAt: isScheduled ? fromInputLocal(publishedAtLocal) : null,
 
-      // ✅ featured image + meta
       featuredMediaId: featuredMediaId ? Number(featuredMediaId) : null,
       featuredTitle: featuredTitle?.trim() || "",
       featuredAlt: featuredAlt?.trim() || "",
       featuredCaption: featuredCaption?.trim() || "",
+
+      metaTitle: metaTitle?.trim() || "",
+      metaDescription: metaDescription?.trim() || "",
+      ogImage: ogImage?.trim() || "",
+      canonicalUrl: canonicalUrl?.trim() || "",
+      noIndex,
     };
 
     const res = await fetch("/api/posts/save", {
@@ -215,29 +245,21 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
     if (!wpId && newId) {
       setWpId(newId);
       window.location.href = `/admin/posts/${newId}/edit`;
-      return;
     }
   }
 
   const urlPreview = useMemo(() => {
-    const iso =
-      status === "SCHEDULED"
-        ? fromInputLocal(publishedAtLocal)
-        : initial?.publishedAt || new Date().toISOString();
-
-    const d = new Date(iso || new Date().toISOString());
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `/${yyyy}/${mm}/${dd}/${slug || "your-slug"}/`;
-  }, [status, publishedAtLocal, slug, initial?.publishedAt]);
+    const d = new Date();
+    return `/${d.getFullYear()}/${String(d.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}/${String(d.getDate()).padStart(2, "0")}/${slug || "your-slug"}/`;
+  }, [slug]);
 
   return (
     <div className="container-fluid">
-      <div className="d-flex align-items-center justify-content-between mb-3">
-        <h1 className="m-0" style={{ fontSize: 26, fontWeight: 400 }}>
-          {mode === "create" ? "Add New Post" : "Edit Post"}
-        </h1>
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h1 className="h4">{mode === "create" ? "Add New Post" : "Edit Post"}</h1>
 
         <div className="d-flex align-items-center gap-2">
           {msg ? <span className="text-success small">{msg}</span> : null}
@@ -248,118 +270,75 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
       </div>
 
       <div className="row g-3">
-        {/* LEFT MAIN */}
-        <div className="col-12 col-lg-8">
-          <div className="bg-white border rounded p-3 mb-3">
-            <div className="mb-3">
-              <label className="form-label fw-semibold">Title</label>
-              <input
-                className="form-control form-control-lg"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
-            </div>
+        {/* LEFT */}
+        <div className="col-lg-8">
+          <div className="card p-3 mb-3">
+            <label className="fw-semibold">Title</label>
+            <input
+              className="form-control mb-2"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
 
-            <div className="mb-3">
-              <label className="form-label fw-semibold">Slug</label>
-              <input
-                className="form-control"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value)}
-              />
-              <div className="text-muted mt-1" style={{ fontSize: 12 }}>
-                URL preview: <code>{urlPreview}</code>
-              </div>
-            </div>
+            <label className="fw-semibold">Slug</label>
+            <input
+              className="form-control mb-1"
+              value={slug}
+              onChange={(e) => setSlug(e.target.value)}
+            />
+            <small className="text-muted">URL: {urlPreview}</small>
 
-            <div className="mb-3">
-              <label className="form-label fw-semibold">Excerpt</label>
-              <textarea
-                className="form-control"
-                rows={3}
-                value={excerpt}
-                onChange={(e) => setExcerpt(e.target.value)}
-              />
-            </div>
+            <label className="fw-semibold mt-3">Excerpt</label>
+            <textarea
+              className="form-control"
+              rows={3}
+              value={excerpt}
+              onChange={(e) => setExcerpt(e.target.value)}
+            />
 
-            <div>
-              <label className="form-label fw-semibold">Content</label>
-              <textarea
-                className="form-control"
-                rows={14}
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-              />
-              <div className="text-muted mt-1" style={{ fontSize: 12 }}>
-                (Later we can replace this with a wp-like rich editor.)
-              </div>
-            </div>
+            <label className="fw-semibold mt-3">Content</label>
+            <BlockEditorDnd value={blocks} onChange={setBlocks} />
           </div>
         </div>
 
-        {/* RIGHT SIDEBAR */}
-        <div className="col-12 col-lg-4">
+        {/* RIGHT */}
+        <div className="col-lg-4">
           {/* Publish */}
-          <div className="bg-white border rounded mb-3">
-            <div className="border-bottom px-3 py-2 fw-semibold">Publish</div>
-            <div className="p-3">
-              <div className="mb-3">
-                <label className="form-label">Status</label>
-                <select
-                  className="form-select"
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                >
-                  <option value="DRAFT">Draft</option>
-                  <option value="PUBLISHED">Published</option>
-                  <option value="SCHEDULED">Scheduled</option>
-                  <option value="PRIVATE">Private</option>
-                </select>
-              </div>
+          <div className="card mb-3">
+            <div className="card-header">Publish</div>
+            <div className="card-body">
+              <select
+                className="form-select mb-2"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              >
+                <option value="DRAFT">Draft</option>
+                <option value="PUBLISHED">Published</option>
+                <option value="SCHEDULED">Scheduled</option>
+                <option value="PRIVATE">Private</option>
+              </select>
 
               {isScheduled ? (
-                <div className="mb-3">
-                  <label className="form-label">Publish date/time</label>
-                  <input
-                    type="datetime-local"
-                    className="form-control"
-                    value={publishedAtLocal}
-                    onChange={(e) => setPublishedAtLocal(e.target.value)}
-                  />
-                  <div className="text-muted mt-1" style={{ fontSize: 12 }}>
-                    Must be a future time.
-                  </div>
-                </div>
+                <input
+                  type="datetime-local"
+                  className="form-control"
+                  value={publishedAtLocal}
+                  onChange={(e) => setPublishedAtLocal(e.target.value)}
+                />
               ) : null}
-
-              <button
-                className="btn btn-primary w-100"
-                onClick={save}
-                disabled={saving}
-              >
-                {saving
-                  ? "Saving..."
-                  : status === "PUBLISHED"
-                  ? "Update"
-                  : status === "SCHEDULED"
-                  ? "Schedule"
-                  : "Save Draft"}
-              </button>
             </div>
           </div>
 
-          {/* Categories */}
-          <div className="bg-white border rounded mb-3">
-            <div className="border-bottom px-3 py-2 fw-semibold">
-              Categories
-            </div>
-            <div className="p-3">
+          {/* Category */}
+          <div className="card mb-3">
+            <div className="card-header">Category</div>
+            <div className="card-body">
               <select
                 className="form-select"
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
               >
-                <option value="">Select category</option>
+                <option value="">Select</option>
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
@@ -369,28 +348,10 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
             </div>
           </div>
 
-          {/* Tags */}
-          <div className="bg-white border rounded mb-3">
-            <div className="border-bottom px-3 py-2 fw-semibold">Tags</div>
-            <div className="p-3">
-              <input
-                className="form-control"
-                value={tags}
-                onChange={(e) => setTags(e.target.value)}
-                placeholder="comma,separated,tags"
-              />
-              <div className="text-muted mt-1" style={{ fontSize: 12 }}>
-                DB-only: tags will be created/linked in WP tables on save.
-              </div>
-            </div>
-          </div>
-
           {/* Featured Image */}
-          <div className="bg-white border rounded">
-            <div className="border-bottom px-3 py-2 fw-semibold">
-              Featured Image
-            </div>
-            <div className="p-3">
+          <div className="card mb-3">
+            <div className="card-header">Featured Image</div>
+            <div className="card-body">
               <div className="d-flex gap-2 mb-2">
                 <button
                   type="button"
@@ -398,6 +359,7 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
                   onClick={() => {
                     setMediaOpen(true);
                     setMediaPage(1);
+                    setSelectedMedia(null);
                   }}
                 >
                   Media Library
@@ -443,7 +405,6 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
                       className="form-control"
                       value={featuredTitle}
                       onChange={(e) => setFeaturedTitle(e.target.value)}
-                      placeholder="Attachment title"
                     />
                   </div>
 
@@ -453,7 +414,6 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
                       className="form-control"
                       value={featuredAlt}
                       onChange={(e) => setFeaturedAlt(e.target.value)}
-                      placeholder="Alt text (for SEO)"
                     />
                   </div>
 
@@ -464,7 +424,6 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
                       rows={2}
                       value={featuredCaption}
                       onChange={(e) => setFeaturedCaption(e.target.value)}
-                      placeholder="Caption"
                     />
                   </div>
                 </>
@@ -475,10 +434,67 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
               )}
             </div>
           </div>
+
+          {/* SEO */}
+          <div className="card mb-3">
+            <div className="card-header">SEO</div>
+            <div className="card-body">
+              <label className="fw-semibold">Meta Title</label>
+              <input
+                className="form-control mb-2"
+                value={metaTitle}
+                onChange={(e) => setMetaTitle(e.target.value)}
+              />
+
+              <label className="fw-semibold">Meta Description</label>
+              <textarea
+                className="form-control mb-2"
+                rows={3}
+                value={metaDescription}
+                onChange={(e) => setMetaDescription(e.target.value)}
+              />
+
+              <label className="fw-semibold">OG Image URL</label>
+              <input
+                className="form-control mb-2"
+                value={ogImage}
+                onChange={(e) => setOgImage(e.target.value)}
+              />
+
+              <label className="fw-semibold">Canonical URL</label>
+              <input
+                className="form-control mb-2"
+                value={canonicalUrl}
+                onChange={(e) => setCanonicalUrl(e.target.value)}
+              />
+
+              <div className="form-check mb-3">
+                <input
+                  type="checkbox"
+                  className="form-check-input"
+                  checked={noIndex}
+                  onChange={(e) => setNoIndex(e.target.checked)}
+                  id="noindex"
+                />
+                <label htmlFor="noindex" className="form-check-label">
+                  Noindex
+                </label>
+              </div>
+
+              <SeoPreview
+                title={title}
+                slug={slug}
+                metaTitle={metaTitle}
+                metaDescription={metaDescription}
+                siteName="CXO Media"
+                ogImage={ogImage || featuredUrl}
+              />
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* MEDIA MODAL */}
+      {/* MEDIA MODAL (WP-like) */}
       {mediaOpen ? (
         <div
           className="position-fixed top-0 start-0 w-100 h-100"
@@ -488,9 +504,9 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
           <div
             className="bg-white rounded p-3"
             style={{
-              width: "min(1000px, 94vw)",
-              height: "min(720px, 90vh)",
-              margin: "5vh auto",
+              width: "min(1100px, 96vw)",
+              height: "min(760px, 92vh)",
+              margin: "4vh auto",
               overflow: "auto",
             }}
             onClick={(e) => e.stopPropagation()}
@@ -507,7 +523,7 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
               </div>
             </div>
 
-            {/* ✅ Upload from local */}
+            {/* Upload */}
             <div className="d-flex align-items-center gap-2 mb-3">
               <input
                 type="file"
@@ -525,6 +541,7 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
               </div>
             </div>
 
+            {/* Search */}
             <div className="d-flex gap-2 mb-3">
               <input
                 className="form-control"
@@ -543,78 +560,141 @@ export default function PostEditor({ mode, initial, categories = [] }: Props) {
               </button>
             </div>
 
-            {mediaLoading ? (
-              <div className="text-muted">Loading...</div>
-            ) : (
-              <div className="row g-2">
-                {(mediaData?.media || []).map((m) => (
-                  <div key={m.id} className="col-6 col-md-3">
-                    <button
-                      type="button"
-                      className="btn btn-light border w-100 text-start p-2"
-                      onClick={() => {
-                        setFeaturedMediaId(Number(m.id));
-                        setFeaturedUrl(m.url);
-
-                        // ✅ prefill meta if available
-                        setFeaturedTitle(m.title || "");
-                        setFeaturedAlt(m.alt || "");
-                        setFeaturedCaption(m.caption || "");
-
-                        setMediaOpen(false);
-                      }}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={m.url}
-                        alt={m.alt || m.title || ""}
-                        style={{
-                          width: "100%",
-                          height: 120,
-                          objectFit: "cover",
-                          borderRadius: 6,
-                        }}
-                      />
-                      <div className="mt-2" style={{ fontSize: 12 }}>
-                        <div className="fw-semibold text-truncate">
-                          {m.title || `#${m.id}`}
+            {/* Grid + details */}
+            <div className="row g-3">
+              <div className="col-md-8">
+                {mediaLoading ? (
+                  <div className="text-muted">Loading...</div>
+                ) : (
+                  <div className="row g-2">
+                    {(mediaData?.media || []).map((m) => {
+                      const selected = selectedMedia?.id === m.id;
+                      return (
+                        <div key={m.id} className="col-6 col-md-3">
+                          <button
+                            type="button"
+                            className={`btn w-100 text-start p-2 border ${
+                              selected ? "btn-primary text-white" : "btn-light"
+                            }`}
+                            onClick={() => setSelectedMedia(m)}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={m.url}
+                              alt={m.alt || m.title || ""}
+                              style={{
+                                width: "100%",
+                                height: 120,
+                                objectFit: "cover",
+                                borderRadius: 6,
+                                border: "1px solid rgba(0,0,0,.1)",
+                              }}
+                            />
+                            <div className="mt-2" style={{ fontSize: 12 }}>
+                              <div className="fw-semibold text-truncate">
+                                {m.title || `#${m.id}`}
+                              </div>
+                              <div className="text-muted text-truncate">
+                                {m.mime}
+                              </div>
+                            </div>
+                          </button>
                         </div>
-                        <div className="text-muted text-truncate">{m.mime}</div>
-                      </div>
+                      );
+                    })}
+
+                    {!mediaData?.media?.length ? (
+                      <div className="text-muted">No media found.</div>
+                    ) : null}
+                  </div>
+                )}
+
+                {/* ✅ Pagination controls */}
+                <div className="d-flex align-items-center justify-content-between mt-3">
+                  <div className="text-muted" style={{ fontSize: 12 }}>
+                    {mediaData?.total ?? 0} items
+                  </div>
+
+                  <div className="d-flex align-items-center gap-2">
+                    <button
+                      className="btn btn-sm btn-outline-secondary"
+                      disabled={mediaPage <= 1}
+                      onClick={() => setMediaPage((p) => p - 1)}
+                    >
+                      ‹ Prev
+                    </button>
+                    <div className="text-muted" style={{ fontSize: 12 }}>
+                      Page {mediaPage} / {mediaData?.pages ?? 1}
+                    </div>
+                    <button
+                      className="btn btn-sm btn-outline-secondary"
+                      disabled={mediaData ? mediaPage >= mediaData.pages : true}
+                      onClick={() => setMediaPage((p) => p + 1)}
+                    >
+                      Next ›
                     </button>
                   </div>
-                ))}
-
-                {!mediaData?.media?.length ? (
-                  <div className="text-muted">No media found.</div>
-                ) : null}
-              </div>
-            )}
-
-            <div className="d-flex align-items-center justify-content-between mt-3">
-              <div className="text-muted" style={{ fontSize: 12 }}>
-                {mediaData?.total ?? 0} items
-              </div>
-
-              <div className="d-flex align-items-center gap-2">
-                <button
-                  className="btn btn-sm btn-outline-secondary"
-                  disabled={mediaPage <= 1}
-                  onClick={() => setMediaPage((p) => p - 1)}
-                >
-                  ‹ Prev
-                </button>
-                <div className="text-muted" style={{ fontSize: 12 }}>
-                  Page {mediaPage} / {mediaData?.pages ?? 1}
                 </div>
-                <button
-                  className="btn btn-sm btn-outline-secondary"
-                  disabled={mediaData ? mediaPage >= mediaData.pages : true}
-                  onClick={() => setMediaPage((p) => p + 1)}
-                >
-                  Next ›
-                </button>
               </div>
+
+              {/* ✅ Right side details panel */}
+              <div className="col-md-4">
+                <div className="border rounded p-2">
+                  <div className="fw-semibold mb-2">Attachment details</div>
+
+                  {selectedMedia ? (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={selectedMedia.url}
+                        alt={selectedMedia.alt || selectedMedia.title || ""}
+                        style={{
+                          width: "100%",
+                          height: 180,
+                          objectFit: "cover",
+                          borderRadius: 6,
+                          border: "1px solid rgba(0,0,0,.12)",
+                        }}
+                      />
+
+                      <div className="mt-2" style={{ fontSize: 12 }}>
+                        <div>
+                          <b>Title:</b>{" "}
+                          {selectedMedia.title || `#${selectedMedia.id}`}
+                        </div>
+                        <div>
+                          <b>Type:</b> {selectedMedia.mime}
+                        </div>
+                        <div className="text-muted">
+                          <b>ID:</b> {selectedMedia.id}
+                        </div>
+                      </div>
+
+                      <button
+                        className="btn btn-primary btn-sm w-100 mt-2"
+                        onClick={() => {
+                          setFeaturedMediaId(Number(selectedMedia.id));
+                          setFeaturedUrl(selectedMedia.url);
+                          setFeaturedTitle(selectedMedia.title || "");
+                          setFeaturedAlt(selectedMedia.alt || "");
+                          setFeaturedCaption(selectedMedia.caption || "");
+                          setMediaOpen(false);
+                        }}
+                      >
+                        Set as Featured Image
+                      </button>
+                    </>
+                  ) : (
+                    <div className="text-muted" style={{ fontSize: 13 }}>
+                      Select an item to see details.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="text-muted mt-2" style={{ fontSize: 12 }}>
+              Tip: click an image to select, then click “Set as Featured Image”.
             </div>
           </div>
         </div>
