@@ -21,7 +21,9 @@ function mapUiToWpStatus(ui: string) {
 
 function fmt(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 async function getCategoryTaxonomyId(p: string, termId: number) {
@@ -98,8 +100,11 @@ async function ensureTagTerm(p: string, name: string) {
   return { termId, termTaxonomyId };
 }
 
-async function replaceTermRelationships(p: string, postId: number, termTaxonomyIds: number[]) {
-  // Remove old category + tag relationships
+async function replaceTermRelationships(
+  p: string,
+  postId: number,
+  termTaxonomyIds: number[]
+) {
   await wpPrisma.$executeRawUnsafe(
     `
     DELETE tr FROM ${p}term_relationships tr
@@ -109,7 +114,6 @@ async function replaceTermRelationships(p: string, postId: number, termTaxonomyI
     postId
   );
 
-  // Add new ones
   for (const ttid of termTaxonomyIds) {
     await wpPrisma.$executeRawUnsafe(
       `INSERT IGNORE INTO ${p}term_relationships (object_id, term_taxonomy_id, term_order)
@@ -119,7 +123,6 @@ async function replaceTermRelationships(p: string, postId: number, termTaxonomyI
     );
   }
 
-  // Refresh counts (simple)
   await wpPrisma.$executeRawUnsafe(
     `
     UPDATE ${p}term_taxonomy tt
@@ -132,7 +135,12 @@ async function replaceTermRelationships(p: string, postId: number, termTaxonomyI
   );
 }
 
-async function upsertPostMeta(p: string, postId: number, key: string, value: string | null) {
+async function upsertPostMeta(
+  p: string,
+  postId: number,
+  key: string,
+  value: string | null
+) {
   if (value === null || value === "") {
     await wpPrisma.$executeRawUnsafe(
       `DELETE FROM ${p}postmeta WHERE post_id=? AND meta_key=?`,
@@ -165,6 +173,10 @@ async function upsertPostMeta(p: string, postId: number, key: string, value: str
   }
 }
 
+function asBool01(v: any) {
+  return v ? "1" : "0";
+}
+
 export async function POST(req: Request) {
   const session = getSession();
   if (!session) return bad("Unauthorized", 401);
@@ -186,7 +198,24 @@ export async function POST(req: Request) {
     publishedAt,
     categoryId,
     tags,
+
+    // media
     featuredMediaId,
+    thumbnail, // OPTIONAL: if you ever send URL directly
+
+    // new UI fields
+    postFormat,
+    subtitle,
+    secondaryAuthors, // number[]
+    featured,
+    trending,
+
+    // SEO
+    metaTitle,
+    metaDescription,
+    ogImage,
+    canonicalUrl,
+    noIndex,
   } = body;
 
   if (!title?.trim()) return bad("Title is required");
@@ -196,11 +225,12 @@ export async function POST(req: Request) {
 
   let wpStatus = mapUiToWpStatus(status);
 
-  // Scheduling rules: if scheduled time is past -> publish
+  // Scheduling rules
   let postDate = new Date();
   if (wpStatus === "future") {
     const d = publishedAt ? new Date(publishedAt) : null;
-    if (!d || isNaN(d.getTime())) return bad("Scheduled posts require valid publish datetime");
+    if (!d || isNaN(d.getTime()))
+      return bad("Scheduled posts require valid publish datetime");
     if (d.getTime() <= Date.now()) {
       wpStatus = "publish";
       postDate = new Date();
@@ -235,10 +265,11 @@ export async function POST(req: Request) {
       post_modified
     );
 
-    const created = await wpPrisma.$queryRawUnsafe<any[]>(`SELECT CAST(LAST_INSERT_ID() AS UNSIGNED) as id`);
+    const created = await wpPrisma.$queryRawUnsafe<any[]>(
+      `SELECT CAST(LAST_INSERT_ID() AS UNSIGNED) as id`
+    );
     postId = Number(created?.[0]?.id || 0);
 
-    // set guid as WP style permalink reference
     await wpPrisma.$executeRawUnsafe(
       `UPDATE ${p}posts SET guid=? WHERE ID=?`,
       `${WP_SITE_URL}/?p=${postId}`,
@@ -289,12 +320,81 @@ export async function POST(req: Request) {
 
   await replaceTermRelationships(p, postId, [catTtid, ...tagTtids]);
 
-  // Featured image
+  // Featured image (attachment ID)
   await upsertPostMeta(
     p,
     postId,
     "_thumbnail_id",
     featuredMediaId ? String(Number(featuredMediaId)) : null
+  );
+
+  // If you also store thumbnail URL directly (optional)
+  await upsertPostMeta(
+    p,
+    postId,
+    "_apac_thumbnail_url",
+    thumbnail?.trim() ? String(thumbnail).trim() : null
+  );
+
+  // ✅ New: post format + subtitle
+  await upsertPostMeta(
+    p,
+    postId,
+    "_apac_post_format",
+    postFormat ? String(postFormat) : null
+  );
+  await upsertPostMeta(
+    p,
+    postId,
+    "_apac_subtitle",
+    subtitle?.trim() ? String(subtitle).trim() : null
+  );
+
+  // ✅ New: featured + trending
+  await upsertPostMeta(p, postId, "_apac_featured", asBool01(featured));
+  await upsertPostMeta(p, postId, "_apac_trending", asBool01(trending));
+
+  // ✅ New: secondary authors (store JSON array)
+  const sec = Array.isArray(secondaryAuthors)
+    ? secondaryAuthors.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n))
+    : [];
+  await upsertPostMeta(
+    p,
+    postId,
+    "_apac_secondary_authors",
+    sec.length ? JSON.stringify(sec) : null
+  );
+
+  // ✅ SEO (Yoast-like keys so your Story page can read them)
+  await upsertPostMeta(
+    p,
+    postId,
+    "_yoast_wpseo_title",
+    metaTitle?.trim() ? String(metaTitle).trim() : null
+  );
+  await upsertPostMeta(
+    p,
+    postId,
+    "_yoast_wpseo_metadesc",
+    metaDescription?.trim() ? String(metaDescription).trim() : null
+  );
+  await upsertPostMeta(
+    p,
+    postId,
+    "_yoast_wpseo_opengraph-image",
+    ogImage?.trim() ? String(ogImage).trim() : null
+  );
+  await upsertPostMeta(
+    p,
+    postId,
+    "_yoast_wpseo_canonical",
+    canonicalUrl?.trim() ? String(canonicalUrl).trim() : null
+  );
+  await upsertPostMeta(
+    p,
+    postId,
+    "_yoast_wpseo_meta-robots-noindex",
+    noIndex ? "1" : null
   );
 
   return NextResponse.json(jsonSafe({ ok: true, wpId: postId }));

@@ -28,37 +28,40 @@ enum Role {
 }
 
 model User {
-  id           Int      @id @default(autoincrement())
+  id           Int     @id @default(autoincrement())
   name         String
-  username     String   @unique
-  email        String?  @unique
-  passwordHash String   @db.VarChar(255) // bcrypt hash
+  username     String  @unique
+  email        String? @unique
+  passwordHash String  @db.VarChar(255) // bcrypt hash
 
-  bio          String?  @db.LongText
-  avatar       String?  @db.LongText
+  bio    String? @db.LongText
+  avatar String? @db.LongText
 
-  role         Role     @default(AUTHOR)
-  posts        Post[]
+  role Role @default(AUTHOR)
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  // Authorship relations
+  authoredPosts  Post[] @relation("PrimaryAuthor")
+  secondaryPosts Post[] @relation("SecondaryAuthors")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([role])
   @@index([createdAt])
 }
 
 model Category {
-  id          Int        @id @default(autoincrement())
+  id          Int     @id @default(autoincrement())
   name        String
-  slug        String     @unique
-  description String?    @db.LongText
+  slug        String  @unique
+  description String? @db.LongText
 
-  parentId    Int?
-  parent      Category?  @relation("CategoryParent", fields: [parentId], references: [id])
-  children    Category[] @relation("CategoryParent")
+  parentId Int?
+  parent   Category?  @relation("CategoryParent", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryParent")
 
-  posts       Post[]
-  createdAt   DateTime   @default(now())
+  posts     Post[]
+  createdAt DateTime @default(now())
 
   @@index([parentId])
 }
@@ -69,36 +72,41 @@ model Setting {
 }
 
 model Post {
-  id          Int        @id @default(autoincrement())
-  title       String
-  slug        String     @unique
-  excerpt     String?    @db.LongText
-  content     String     @db.LongText
+  id      Int     @id @default(autoincrement())
+  title   String
+  slug    String  @unique
+  excerpt String? @db.LongText
+  content String  @db.LongText
 
-  thumbnail   String?    @db.LongText
-  featured    Boolean    @default(false)
-  trending    Boolean    @default(false)
-  views       Int        @default(0)
+  thumbnail String? @db.LongText
+  featured  Boolean @default(false)
+  trending  Boolean @default(false)
+  views     Int     @default(0)
 
   status      PostStatus @default(DRAFT)
-  publishedAt DateTime?  // scheduling
+  publishedAt DateTime? // scheduling
 
-  authorId    Int
-  author      User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  // Primary author (one-to-many)
+  authorId Int
+  author   User @relation("PrimaryAuthor", fields: [authorId], references: [id], onDelete: Cascade)
 
-  categoryId  Int
-  category    Category   @relation(fields: [categoryId], references: [id])
+  // Secondary authors (many-to-many)
+  secondaryAuthors User[] @relation("SecondaryAuthors")
 
-  tags        String?    @db.LongText
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  // Category (many-to-one)
+  categoryId Int
+  category   Category @relation(fields: [categoryId], references: [id])
 
-    metaTitle       String?
+  tags String? @db.LongText
+
+  metaTitle       String?
   metaDescription String?
   ogImage         String?
   canonicalUrl    String?
-  noIndex         Boolean   @default(false)
+  noIndex         Boolean @default(false)
 
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([authorId])
   @@index([categoryId])
@@ -107,19 +115,21 @@ model Post {
 }
 
 model Media {
-  id        Int      @id @default(autoincrement())
-  title     String
-  url       String   @db.LongText
-  mimeType  String
-  altText   String?  @db.LongText
-  caption   String?  @db.LongText
+  id       Int     @id @default(autoincrement())
+  title    String
+  url      String  @db.LongText
+  mimeType String
+  altText  String? @db.LongText
+  caption  String? @db.LongText
+
   createdAt DateTime @default(now())
 }
 
 model WidgetArea {
-  id        Int      @id @default(autoincrement())
-  areaKey   String   @unique
-  config    String   @db.LongText  // JSON
+  id      Int    @id @default(autoincrement())
+  areaKey String @unique
+  config  String @db.LongText // JSON
+
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 }

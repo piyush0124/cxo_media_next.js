@@ -1,22 +1,13 @@
-import PostEditor from "@/components/admin/PostEditor";
-import wpPrisma from "@/lib/wpPrisma";
+import PostEditorWp from "@/components/admin/PostEditor";
+import { PrismaClient } from "@prisma/client";
 
-export default async function NewpneostPage() {
-  const p = process.env.wp_TABLE_PREFIX ?? "wp_";
+const prisma = new PrismaClient();
 
-  const categories = await wpPrisma.$queryRawUnsafe<
-    { id: number; name: string; slug: string }[]
-  >(`
-    SELECT
-      t.term_id AS id,
-      t.name,
-      t.slug
-    FROM ${p}terms t
-    INNER JOIN ${p}term_taxonomy tt
-      ON tt.term_id = t.term_id
-    WHERE tt.taxonomy = 'category'
-    ORDER BY t.name ASC
-  `);
+export default async function NewPostPage() {
+  const categories = await prisma.category.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
 
-  return <PostEditor mode="create" categories={categories} />;
+  return <PostEditorWp mode="create" categories={categories} />;
 }

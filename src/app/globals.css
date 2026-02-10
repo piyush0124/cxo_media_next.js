@@ -823,3 +823,134 @@ body {
   100% { left: 120%; }
 }
 
+.wp-editor {
+  padding: 12px 14px;
+}
+
+.wp-editor__tabs {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  border-bottom: 1px solid #dcdcde;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+}
+
+.wp-tab {
+  border: 1px solid #c3c4c7;
+  background: #f6f7f7;
+  padding: 4px 10px;
+  border-radius: 3px 3px 0 0;
+  font-size: 12px;
+}
+.wp-tab.is-active {
+  background: #fff;
+  border-bottom-color: #fff;
+}
+
+.wp-editor__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 14px;
+}
+
+.wp-title {
+  width: 100%;
+  font-size: 22px;
+  padding: 10px 12px;
+  border: 1px solid #c3c4c7;
+  border-radius: 2px;
+  margin-bottom: 8px;
+}
+
+.wp-subtitle {
+  width: 100%;
+  font-size: 14px;
+  padding: 8px 12px;
+  border: 1px solid #c3c4c7;
+  border-radius: 2px;
+  margin-bottom: 12px;
+}
+
+.wp-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: #f6f7f7;
+  border: 1px solid #c3c4c7;
+  padding: 8px;
+  border-radius: 2px 2px 0 0;
+}
+
+.wp-toolbar__hint {
+  font-size: 12px;
+}
+
+.wp-pill {
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid #c3c4c7;
+  border-radius: 2px;
+  background: #fff;
+}
+.wp-pill--off {
+  background: #f0f0f1;
+}
+
+.wp-editorbox {
+  border: 1px solid #c3c4c7;
+  border-top: none;
+  border-radius: 0 0 2px 2px;
+  padding: 12px;
+  background: #fff;
+}
+
+.wp-metabox {
+  border: 1px solid #c3c4c7;
+  background: #fff;
+  margin-bottom: 12px;
+}
+
+.wp-metabox__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  background: #f6f7f7;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid #dcdcde;
+}
+
+.wp-metabox__title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.wp-metabox__body {
+  padding: 10px;
+}
+.wp-tabs {
+  display: flex;
+  gap: 10px;
+  border-bottom: 1px solid #ddd;
+  margin-bottom: 6px;
+}
+
+.wp-tabs button {
+  border: none;
+  background: none;
+  font-size: 12px;
+  padding: 4px 6px;
+  color: #2271b1;
+}
+
+.wp-tabs .is-active {
+  border-bottom: 2px solid #2271b1;
+  font-weight: 600;
+}
+
+.wp-scroll {
+  max-height: 180px;
+  overflow: auto;
+}
